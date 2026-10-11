@@ -25,8 +25,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .values import (FIELDS_BY_TYPE, HEADER_FIELDS, LINE_FIELDS, MAX_LINES, amount_in_text, clean_text,
-                     normalize, parse_printed_amount, parse_printed_date)
+from .values import (
+    FIELDS_BY_TYPE,
+    HEADER_FIELDS,
+    LINE_FIELDS,
+    MAX_LINES,
+    amount_in_text,
+    clean_text,
+    normalize,
+    parse_printed_amount,
+    parse_printed_date,
+)
 
 log = logging.getLogger("intake.reader")
 

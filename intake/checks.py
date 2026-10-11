@@ -24,8 +24,20 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Protocol
 
 from .config import Policy
-from .values import (BANK_FIELDS, CENT, FIELDS_BY_TYPE, HEADER_FIELDS, REQUIRED_BY_TYPE, dec, exact_number_key,
-                     iban_is_valid, money, name_key, parse_date, uk_details_from_iban)
+from .values import (
+    BANK_FIELDS,
+    CENT,
+    FIELDS_BY_TYPE,
+    HEADER_FIELDS,
+    REQUIRED_BY_TYPE,
+    dec,
+    exact_number_key,
+    iban_is_valid,
+    money,
+    name_key,
+    parse_date,
+    uk_details_from_iban,
+)
 
 SEVERITIES = ("error", "blocking", "warning", "info")
 COMMITTED = ("approved", "exporting", "exported")
@@ -467,7 +479,7 @@ def _po_match(doc: dict, fields: dict, lines: list[dict], vendor: dict | None, l
                     f"{po_qty.normalize():f}, {already.normalize():f} already on approved invoices, so "
                     f"{remaining.normalize():f} remain.", "lines")
 
-    po_net = sum((q2(Decimal(str(l["quantity"])) * Decimal(str(l["unit_price"]))) for l in po["lines"]), Decimal("0"))
+    po_net = sum((q2(Decimal(str(ln["quantity"])) * Decimal(str(ln["unit_price"]))) for ln in po["lines"]), Decimal("0"))
     invoiced = Decimal(str(po.get("already_invoiced") or "0")) + sum(
         (dec(o["fields"].get("subtotal")) or Decimal("0") for o in prior), Decimal("0"))
     remaining = po_net - invoiced
@@ -509,7 +521,7 @@ def _purchase_order_checks(doc: dict, fields: dict, lines: list[dict], vendor: d
     differences = []
     if vendor and po["vendor_id"] != vendor["id"]:
         differences.append(f"vendor {vendor['id']} (register: {po['vendor_id']})")
-    po_net = sum((q2(Decimal(str(l["quantity"])) * Decimal(str(l["unit_price"]))) for l in po["lines"]), Decimal("0"))
+    po_net = sum((q2(Decimal(str(ln["quantity"])) * Decimal(str(ln["unit_price"]))) for ln in po["lines"]), Decimal("0"))
     subtotal = dec(fields.get("subtotal"))
     if subtotal is not None and subtotal != po_net:
         differences.append(f"net amount {money(subtotal)} (register: {money(po_net)})")

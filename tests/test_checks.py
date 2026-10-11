@@ -3,8 +3,8 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
-
 from conftest import TODAY, set_status, stored_doc
+
 from intake.checks import run_checks
 
 ACME_IBAN = "GB77DEMO40000110000001"

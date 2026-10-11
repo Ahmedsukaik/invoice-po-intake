@@ -11,11 +11,10 @@ import shutil
 import anthropic
 import httpx2
 import pytest
+from conftest import SAMPLES, SARA, ack, add, codes, sample
 
-from conftest import SARA, SAMPLES, ack, add, codes, sample
 from intake import review
-from intake.extract import (FALLBACK_BETA, MAX_TOKENS, OUTPUT_SCHEMA, ClaudeExtractor, ExtractionFailed,
-                            ReaderUnavailable)
+from intake.extract import FALLBACK_BETA, MAX_TOKENS, OUTPUT_SCHEMA, ClaudeExtractor, ExtractionFailed, ReaderUnavailable
 from intake.pdftext import read_text
 from intake.pipeline import scan_inbox
 

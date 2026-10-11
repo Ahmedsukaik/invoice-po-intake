@@ -6,8 +6,8 @@ import time
 from decimal import Decimal
 
 import pytest
-
 from conftest import SAMPLES
+
 from intake.__main__ import main as run_server
 from intake.config import Policy, Settings, TokenTable
 from intake.pipeline import scan_inbox

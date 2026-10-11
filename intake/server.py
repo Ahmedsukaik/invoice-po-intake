@@ -43,8 +43,7 @@ from .export import BATCH_ID, ExportBusy, resolve_batch, run_export
 from .pipeline import UploadRefused, ingest, scan_inbox
 from .review import ActionRefused
 from .store import REVIEWABLE, STATUSES, now
-from .values import (BANK_FIELDS, FIELDS_BY_TYPE, HEADER_FIELDS, LINE_FIELDS, dec, iban_display, money,
-                     q2_or_none)
+from .values import BANK_FIELDS, FIELDS_BY_TYPE, HEADER_FIELDS, LINE_FIELDS, dec, iban_display, money, q2_or_none
 
 log = logging.getLogger("intake")
 HERE = Path(__file__).resolve().parent
@@ -758,7 +757,7 @@ def build_app(deps: Deps, allowed_hosts: list[str] | None = None, secure_cookies
         need(me[0], "view", "list_purchase_orders")
         rows = []
         for po in store.purchase_orders():
-            net = sum((Decimal(str(l["quantity"])) * Decimal(str(l["unit_price"])) for l in po["lines"]), Decimal("0"))
+            net = sum((Decimal(str(ln["quantity"])) * Decimal(str(ln["unit_price"])) for ln in po["lines"]), Decimal("0"))
             rows.append({**po, "net": str(net)})
         return page(request, "purchase_orders.html", {"pos": rows, "vendors": {v["id"]: v for v in store.vendors()}}, me)
 

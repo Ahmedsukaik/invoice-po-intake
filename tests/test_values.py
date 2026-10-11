@@ -1,8 +1,19 @@
 """Parsing of single values: strict, and never a half-valid result."""
 import pytest
 
-from intake.values import (amount_in_text, clean_text, exact_number_key, iban_is_valid, name_key, normalize,
-                           normalize_line, number_key, parse_printed_amount, parse_printed_date, uk_details_from_iban)
+from intake.values import (
+    amount_in_text,
+    clean_text,
+    exact_number_key,
+    iban_is_valid,
+    name_key,
+    normalize,
+    normalize_line,
+    number_key,
+    parse_printed_amount,
+    parse_printed_date,
+    uk_details_from_iban,
+)
 
 
 @pytest.mark.parametrize("raw, expected", [

@@ -96,13 +96,13 @@ def _table(pdf: FPDF, lines: list[Line], extra_rows: list[str] | None = None) ->
     pdf.set_draw_color(*INK)
     pdf.set_line_width(0.3)
     pdf.set_font("Helvetica", "B", 10)
-    for width, head in zip(widths, ["Item", "Description", "Qty", "Unit price", "Amount"]):
+    for width, head in zip(widths, ["Item", "Description", "Qty", "Unit price", "Amount"], strict=True):
         pdf.cell(width, 8, head, border="B", align="L" if head in ("Item", "Description") else "R")
     pdf.ln()
     pdf.set_font("Helvetica", "", 10)
     pdf.set_draw_color(220, 225, 230)
     for row in lines:
-        for i, (width, value) in enumerate(zip(widths, row)):
+        for i, (width, value) in enumerate(zip(widths, row, strict=True)):
             pdf.cell(width, 8, value, border="B", align="L" if i < 2 else "R")
         pdf.ln()
     for text in extra_rows or []:

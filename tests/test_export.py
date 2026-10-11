@@ -5,8 +5,8 @@ import threading
 from pathlib import Path
 
 import pytest
-
 from conftest import ANA, OMAR, SARA, ack, add
+
 from intake import review
 from intake.export import CsvJsonExporter, ExportBusy, export_lock, resolve_batch, run_export
 from samples.make_samples import invoice_pdf
@@ -49,7 +49,7 @@ def test_files_have_the_approved_values_and_no_bank_details(deps):
     [inv] = rows(batch["folder"], "invoices.csv")
     assert (inv["document_id"], inv["vendor_id"], inv["invoice_number"], inv["total"], inv["approved_by"]) == \
            (inv_id, "V001", "INV-A-1001", "1800.00", "sara (reviewer)")
-    assert [(l["line_no"], l["sku"], l["line_total"]) for l in rows(batch["folder"], "invoice_lines.csv")] == \
+    assert [(r["line_no"], r["sku"], r["line_total"]) for r in rows(batch["folder"], "invoice_lines.csv")] == \
            [("1", "AC-100", "900.00"), ("2", "AC-220", "600.00")]
     [po] = rows(batch["folder"], "purchase_orders.csv")
     assert po["po_number"] == "PO-2026-0105" and po["vendor_id"] == "V002"

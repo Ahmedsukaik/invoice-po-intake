@@ -2,13 +2,14 @@
 import io
 
 import pytest
+from conftest import SAMPLES, add, codes, sample
 from fpdf import FPDF
 from pypdf import PdfReader, PdfWriter
 
-from conftest import SAMPLES, add, codes, sample
 from intake.extract import RuleBasedExtractor
 from intake.pdftext import looks_like_pdf, read_text
-from samples.make_samples import ACME_0101, SAMPLES as BUILDERS, invoice_pdf
+from samples.make_samples import ACME_0101, invoice_pdf
+from samples.make_samples import SAMPLES as BUILDERS
 
 rules = RuleBasedExtractor()
 

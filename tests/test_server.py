@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
-
 from conftest import ADMIN, CLERK, REVIEWER, REVIEWER2, SAMPLES, all_docs, sample
+
 from intake import cli
 from intake.config import TokenTable
 from samples.make_samples import invoice_pdf

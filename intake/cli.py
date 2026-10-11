@@ -55,7 +55,8 @@ def print_summary(d: dict) -> None:
 
 def print_document(doc: dict) -> None:
     f = doc["fields"]
-    print(f"{show(doc['id'])}  [{show(doc['status'])}]  {show(doc['filename'])}  (version {doc['version']}, read by {show(doc['extractor'])})")
+    print(f"{show(doc['id'])}  [{show(doc['status'])}]  {show(doc['filename'])}  "
+          f"(version {doc['version']}, read by {show(doc['extractor'])})")
     if doc.get("manual_reason") and doc["status"] in ("needs_review", "needs_manual_entry"):
         print(f"    Needs manual entry: {show(doc['manual_reason'])}")
     print("  Fields:")

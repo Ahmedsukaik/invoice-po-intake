@@ -241,4 +241,4 @@ if __name__ == "__main__":
     except Exception as exc:
         if "--claude" not in sys.argv:
             raise
-        raise SystemExit(f"The run with --claude failed: {type(exc).__name__}: {str(exc)[:300]}")
+        raise SystemExit(f"The run with --claude failed: {type(exc).__name__}: {str(exc)[:300]}") from None
