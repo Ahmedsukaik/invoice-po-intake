@@ -62,7 +62,8 @@ def recheck_related(deps: "Deps", doc: dict) -> None:
 
 def read_pdf(deps: "Deps", data: bytes, defer_temporary: bool) -> tuple[PdfText, Extracted, str | None]:
     """(text layer, what the reader found, why a person must type it in or None)."""
-    pdf = read_text_isolated(data, deps.max_pages, deps.pdf_timeout, deps.pdf_workers, deps.pdf_wait)
+    reader = deps.text_reader or read_text_isolated
+    pdf = reader(data, deps.max_pages, deps.pdf_timeout, deps.pdf_workers, deps.pdf_wait)
     if pdf.busy and defer_temporary:
         raise ReaderUnavailable(pdf.problem or "the PDF reader was busy")
     extracted = Extracted(fields=empty_fields(), evidence={"lines": []}, extractor="none")

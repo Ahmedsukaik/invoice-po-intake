@@ -219,6 +219,80 @@ def scanned_pdf(rows: list[list[tuple[int, str]]]) -> bytes:
     return _bytes(pdf)
 
 
+def other_layout_pdf() -> bytes:
+    """An invoice in a layout the rules reader does not know: the supplier's name on a dark band,
+    "Tax invoice" in mixed case, labels such as "Our ref." and "Your order", dates written out,
+    pound signs, the columns in another order, and UK bank details in a sentence. The rules
+    reader sends it to a person; the Claude reader reads it, with the line each value came from."""
+    v = VENDORS["brightline"]
+    navy, pale = (24, 39, 66), (214, 222, 235)
+    pdf = _pdf()
+    pdf.set_fill_color(*navy)
+    pdf.rect(0, 0, 210, 34, style="F")
+    pdf.set_xy(18, 9)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.cell(120, 8, v["name"], new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(18)
+    pdf.set_text_color(*pale)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(120, 5, f"{v['address']}  |  {v['email']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_xy(18, 46)
+    pdf.set_text_color(*INK)
+    pdf.set_font("Times", "", 22)
+    pdf.cell(0, 10, "Tax invoice", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+    top = pdf.get_y()
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(*GREY)
+    pdf.cell(80, 5, "INVOICE TO", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(*INK)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(80, 6, BUYER, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.multi_cell(76, 5, "Accounts payable, " + BUYER_ADDRESS, align="L", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_y(top)
+    for label, value in [("Our ref.", "BDP/26/0417"), ("Date of issue", "9 October 2026"),
+                         ("Payment due", "8 November 2026"), ("Your order", "PO-2026-0105"), ("Prices in", "GBP")]:
+        pdf.set_x(112)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(*GREY)
+        pdf.cell(32, 6, label)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(*INK)
+        pdf.cell(48, 6, value, align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(10)
+    widths = [16, 24, 86, 24, 24]
+    pdf.set_fill_color(*navy)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 9)
+    for width, head in zip(widths, ["Qty", "Code", "Item", "Each", "Net"], strict=True):
+        pdf.cell(width, 8, head, fill=True, align="L" if head in ("Code", "Item") else "R")
+    pdf.ln()
+    pdf.set_text_color(*INK)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_draw_color(*pale)
+    for row in [("300", "BP-310", "Carton, double wall, 400 x 300 mm", "£0.85", "£255.00"),
+                ("200", "BP-505", "Edge protector, 1 m", "£0.40", "£80.00")]:
+        for i, (width, value) in enumerate(zip(widths, row, strict=True)):
+            pdf.cell(width, 9, value, border="B", align="L" if i in (1, 2) else "R")
+        pdf.ln()
+    pdf.ln(4)
+    for label, value, bold in [("Net total", "£335.00", False), ("VAT at 20%", "£67.00", False),
+                               ("Amount payable", "£402.00", True)]:
+        pdf.set_x(110)
+        pdf.set_font("Helvetica", "B" if bold else "", 11 if bold else 10)
+        pdf.cell(42, 7, label)
+        pdf.cell(32, 7, value, align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(10)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, "Bank transfer: sort code 40-00-02, account no. 20000002", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, "Please quote our ref. BDP/26/0417 with your payment. Thank you for your order.",
+             new_x="LMARGIN", new_y="NEXT")
+    _footer(pdf)
+    return _bytes(pdf)
+
+
 ACME_0101 = [("AC-100", "Steel bracket, 40 mm", "200", "4.50", "900.00"),
              ("AC-220", "Hinge set, zinc", "50", "12.00", "600.00")]
 
@@ -280,6 +354,7 @@ SAMPLES: dict[str, Any] = {
         [],
         [(110, "(scanned copy) " + FOOTER)],
     ]),
+    "10_other_layout.pdf": other_layout_pdf,
 }
 
 

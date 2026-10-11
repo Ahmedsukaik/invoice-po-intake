@@ -1,4 +1,10 @@
-# For the tests and for regenerating the sample PDFs (samples/make_samples.py).
+# For the tests, the checks, and for regenerating the sample PDFs (samples/make_samples.py) and
+# their previews for the web demo (samples/make_previews.py, which needs pypdfium2).
 -r requirements.txt
 pytest>=8,<10
 fpdf2>=2.8,<3
+ruff>=0.6,<1
+pypdfium2>=4.30,<6
+# The browser tests and docs/make_media.py drive an installed Chrome or Edge (no browser
+# download). Without Playwright or a browser, those tests are skipped.
+playwright>=1.45,<2

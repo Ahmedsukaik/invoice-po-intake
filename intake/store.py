@@ -259,6 +259,15 @@ class Store:
         self._audit_upgrade(conn, version, len(with_keys))
         return version
 
+    def now(self) -> str:
+        """The time written into documents and the audit log. The web demo pins it, so that
+        replaying a visitor's actions gives the same rows every time."""
+        return now()
+
+    def new_document_id(self, sha256: str) -> str:
+        """A new document's id. The web demo derives it from the file instead (see demo_session.py)."""
+        return "doc_" + uuid.uuid4().hex[:12]
+
     @staticmethod
     def _audit_upgrade(conn: sqlite3.Connection, old: int, documents: int) -> None:
         conn.execute("INSERT INTO audit_log (ts, actor, role, action, document_id, outcome, detail) "
@@ -372,7 +381,7 @@ class Store:
                      uploaded_by: str) -> tuple[dict, bool]:
         """Store a new document. If the same file (same SHA-256) is already stored, that
         document is returned instead and nothing new is created."""
-        doc_id = "doc_" + uuid.uuid4().hex[:12]
+        doc_id = self.new_document_id(sha256)
         doc_type, nkey, vkey, po_ref, total = derived(fields)
         with self._conn() as conn:
             try:
@@ -384,7 +393,7 @@ class Store:
                     (doc_id, sha256, filename, size, source, status, doc_type, nkey, vkey, po_ref, total,
                      json.dumps(fields), json.dumps(fields), json.dumps(evidence), json.dumps(lines),
                      json.dumps(lines), json.dumps(notes), extractor, page_count, text_layer, manual_reason,
-                     uploaded_by, now()),
+                     uploaded_by, self.now()),
                 )
             except sqlite3.IntegrityError:
                 row = conn.execute(f"SELECT {LIGHT} FROM documents WHERE sha256 = ?", (sha256,)).fetchone()
@@ -502,7 +511,7 @@ class Store:
         marks = ",".join("?" * len(REVIEWABLE))
         with self._tx() as conn:
             cur = conn.execute(f"UPDATE documents SET findings = ?, checked_at = ? WHERE id = ? AND version = ? "
-                               f"AND status IN ({marks})", (json.dumps(findings), now(), doc_id, version, *REVIEWABLE))
+                               f"AND status IN ({marks})", (json.dumps(findings), self.now(), doc_id, version, *REVIEWABLE))
             return cur.rowcount > 0
 
     def correct(self, doc_id: str, expected_version: int, fields: dict, lines: list,
@@ -523,7 +532,7 @@ class Store:
             )
             if cur.rowcount != 1:
                 raise Conflict("The document changed or was decided while you were editing it. Open it again.")
-            stamp = now()
+            stamp = self.now()
             for field_name, old, new in changes:
                 conn.execute(
                     "INSERT INTO corrections (document_id, field, old_value, new_value, corrected_by, corrected_at, note) "
@@ -551,7 +560,7 @@ class Store:
             "UPDATE documents SET status = 'approved', decided_by = ?, decided_at = ?, decision_note = ?, "
             "acknowledged = ?, findings = ?, checked_at = ?, vendor_id = ? "
             f"WHERE id = ? AND version = ? AND status IN ({marks})",
-            (by, now(), note, json.dumps(acknowledged), json.dumps(findings), now(), vendor_id, doc_id,
+            (by, self.now(), note, json.dumps(acknowledged), json.dumps(findings), self.now(), vendor_id, doc_id,
              expected_version, *REVIEWABLE),
         )
         if cur.rowcount != 1:
@@ -565,7 +574,7 @@ class Store:
             cur = conn.execute(
                 "UPDATE documents SET status = 'rejected', decided_by = ?, decided_at = ?, decision_note = ? "
                 f"WHERE id = ? AND status IN ({marks})",
-                (by, now(), reason[:500], doc_id, *REVIEWABLE),
+                (by, self.now(), reason[:500], doc_id, *REVIEWABLE),
             )
             row = conn.execute(f"SELECT {LIGHT} FROM documents WHERE id = ?", (doc_id,)).fetchone()
         if row is None:
@@ -585,7 +594,7 @@ class Store:
                                 "ORDER BY decided_at, rowid", (batch_id,)).fetchall()
             if rows:
                 conn.execute("INSERT INTO exports (batch_id, created_by, created_at, document_ids) VALUES (?,?,?,?)",
-                             (batch_id, by, now(), json.dumps([r["id"] for r in rows])))
+                             (batch_id, by, self.now(), json.dumps([r["id"] for r in rows])))
         return [self._doc(r) for r in rows]
 
     def finish_export(self, batch_id: str, exporter: str, files: list[str]) -> None:
@@ -594,7 +603,7 @@ class Store:
                 "SELECT id FROM documents WHERE export_batch = ? AND status = 'exporting'", (batch_id,)).fetchall()]
             for doc_id in ids:  # the primary key makes a second export of the same document impossible
                 conn.execute("INSERT INTO export_items (document_id, batch_id) VALUES (?,?)", (doc_id, batch_id))
-            stamp = now()
+            stamp = self.now()
             conn.execute("UPDATE documents SET status = 'exported', exported_at = ? WHERE export_batch = ? "
                          "AND status = 'exporting'", (stamp, batch_id))
             conn.execute("UPDATE exports SET exporter = ?, finished_at = ?, files = ? WHERE batch_id = ?",
@@ -632,7 +641,7 @@ class Store:
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO audit_log (ts, actor, role, action, document_id, outcome, detail) VALUES (?,?,?,?,?,?,?)",
-                (now(), actor[:80], role[:20], action[:60], document_id, outcome[:20], text),
+                (self.now(), actor[:80], role[:20], action[:60], document_id, outcome[:20], text),
             )
 
     def audit_entries(self, limit: int = 50, document_id: str | None = None) -> list[dict]:

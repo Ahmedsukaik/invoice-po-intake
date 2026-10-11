@@ -9,6 +9,7 @@ from typing import Callable
 from .config import Policy, Settings, TokenTable
 from .export import CsvJsonExporter, Exporter
 from .extract import Extractor, make_extractor
+from .pdftext import PdfText
 from .store import DatabaseVersionError, Store
 
 
@@ -28,6 +29,9 @@ class Deps:
     pdf_timeout: float = 20.0  # seconds a PDF may take to parse before it goes to a person
     pdf_workers: int = 3       # PDFs parsed at the same time, each in its own worker process
     pdf_wait: float = 30.0     # seconds a PDF may wait for a free worker before it goes to a person
+    # How the text layer is read: (pdf, max_pages, timeout, workers, wait) -> PdfText. None means worker
+    # processes with a time limit (pdftext.read_text_isolated). The web demo reads its own sample files.
+    text_reader: Callable[[bytes, int, float, int, float], PdfText] | None = None
 
     def __post_init__(self) -> None:
         for folder in (self.storage_dir, self.inbox_dir, self.outbox_dir):

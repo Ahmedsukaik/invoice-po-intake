@@ -329,8 +329,9 @@ class ClaudeExtractor:
     """
 
     def __init__(self, client: Any | None = None, model: str | None = None, effort: str | None = None,
-                 fallbacks: str | None = None, date_order: str | None = None):
+                 fallbacks: str | None = None, date_order: str | None = None, max_tokens: int = MAX_TOKENS):
         env = os.environ
+        self.max_tokens = max_tokens
         self.model = (model or env.get("INTAKE_CLAUDE_MODEL") or DEFAULT_MODEL).strip()
         if not re.fullmatch(r"claude-[a-z0-9.-]{1,60}", self.model):
             raise SystemExit("INTAKE_CLAUDE_MODEL must be a Claude model id such as claude-sonnet-5-5.")
@@ -380,7 +381,7 @@ class ClaudeExtractor:
             output_config["effort"] = self.effort
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": MAX_TOKENS,
+            "max_tokens": self.max_tokens,
             "system": SYSTEM_PROMPT,
             "output_config": output_config,
             "messages": [{
@@ -399,6 +400,16 @@ class ClaudeExtractor:
         return kwargs
 
     def extract(self, pdf_bytes: bytes, pages: list[str]) -> Extracted:
+        data, info = self.read(pdf_bytes)
+        out = self.parse(data, pages)
+        out.extractor = f"claude:{info['model']}"
+        out.usage = info
+        return out
+
+    def read(self, pdf_bytes: bytes) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The API call alone: (the model's answer, as JSON, not yet checked; model, tokens and
+        request id). Raises ReaderUnavailable or ExtractionFailed. extract() is read() then parse();
+        the web demo keeps the answer and parses it again on every replay."""
         import anthropic
 
         temporary = tuple(getattr(anthropic, name) for name in (
@@ -449,10 +460,7 @@ class ClaudeExtractor:
             raise ExtractionFailed("The model's answer was not valid JSON.") from None
         if not isinstance(data, dict):
             raise ExtractionFailed("The model's answer did not have the expected shape.")
-        out = self.parse(data, pages)
-        out.extractor = f"claude:{served_by}"
-        out.usage = info
-        return out
+        return data, info
 
     def _parse_value(self, out: Extracted, kind: str, raw: str, label: str, field_name: str | None,
                      line: int | None = None) -> str | None:
