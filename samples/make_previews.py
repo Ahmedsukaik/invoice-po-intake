@@ -136,7 +136,10 @@ def main() -> int:
         previews[path.name] = render(path)
         size = (OUT / (path.stem + ".png")).stat().st_size // 1024
         print(f"wrote public/samples/{path.stem}.png ({size} KB, {len(previews[path.name]['lines'])} lines)")
-    (OUT / "previews.json").write_text(json.dumps(previews, indent=1) + "\n", encoding="utf-8")
+    # one file per line, so a change to one preview shows as one changed line
+    text = "{\n" + ",\n".join(f"{json.dumps(name)}: {json.dumps(item, separators=(',', ':'))}"
+                              for name, item in previews.items()) + "\n}\n"
+    (OUT / "previews.json").write_text(text, encoding="utf-8", newline="\n")
     print("wrote public/samples/previews.json")
     return 0
 
