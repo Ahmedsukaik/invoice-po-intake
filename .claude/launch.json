@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "invoice-intake-demo",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "intake.demo_web", "--port", "8320"],
+      "port": 8320
+    }
+  ]
+}

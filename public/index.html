@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Invoice and PO Intake: live demo</title>
+<meta name="description" content="Supplier invoices read from the PDF, checked against the purchase order, and approved by a person. A two minute demo on fictional documents.">
+<meta name="theme-color" content="#FBFAF6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#13161B" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231F5C46'/%3E%3Cpath d='M9 7h11l4 4v14H9z' fill='%23FBFAF6'/%3E%3Cpath d='M12 14h9M12 18h9M12 22h6' stroke='%231F5C46' stroke-width='1.6'/%3E%3C/svg%3E">
+</head>
+<body data-step="0" data-pane="review" data-main="doc" class="in-story">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ledger" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 11h7M9 14.5h7M9 18h4"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 5-5.5"/></symbol>
+  <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+  <symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="alert" viewBox="0 0 24 24"><path d="M10.3 4 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4M12 17h.01"/></symbol>
+  <symbol id="pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="download" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></symbol>
+  <symbol id="arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/></symbol>
+  <symbol id="code" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.9-3.8 3.9-6 7.5-6s6.6 2.2 7.5 6"/></symbol>
+  <symbol id="inbox" viewBox="0 0 24 24"><path d="M3 13h5l1.5 3h5l1.5-3h5"/><path d="M5.6 5h12.8l2.6 8v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M8 8h8M8 11.5h6"/></symbol>
+  <symbol id="chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="chev-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="spark" viewBox="0 0 24 24"><path d="M12 3c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7Z"/><path d="M19 15.5c.3 1.8 1 2.5 2.5 2.8-1.5.3-2.2 1-2.5 2.7-.3-1.7-1-2.4-2.5-2.7 1.5-.3 2.2-1 2.5-2.8Z"/></symbol>
+  <symbol id="cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9.5 9.5h5v5h-5zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></symbol>
+  <symbol id="scan" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg><use href="#ledger"/></svg></span>
+      <div class="brand-text">
+        <h1 class="brand-name">Invoice and PO Intake</h1>
+        <div class="brand-sub"><span class="hide-sm">Reference build on fictional documents.</span><span class="show-sm">Fictional documents.</span> Date fixed at 11 Oct 2026.</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="replay" hidden><svg class="i i-sm" aria-hidden="true"><use href="#refresh"/></svg><span>Replay the demo</span></button>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/Ahmedsukaik/invoice-po-intake" target="_blank" rel="noopener" aria-label="Source code on GitHub"><svg class="i i-sm" aria-hidden="true"><use href="#code"/></svg><span class="hide-sm">Source code</span></a>
+    </div>
+  </header>
+
+  <section class="story" id="story" aria-labelledby="story-title" tabindex="-1">
+    <div class="story-main" id="story-main"></div>
+    <div class="story-actions" id="story-actions"></div>
+    <div class="story-art" id="story-art" aria-hidden="true"></div>
+  </section>
+
+  <nav class="switch-row" id="switch-row" aria-label="View">
+    <div class="seg seg-wide" role="group" aria-label="View">
+      <button type="button" data-pane="inbox" aria-pressed="false">Inbox <span class="count" id="switch-count" hidden></span></button>
+      <button type="button" data-pane="paper" aria-pressed="false">Invoice</button>
+      <button type="button" data-pane="review" aria-pressed="true">Review</button>
+    </div>
+  </nav>
+
+  <main class="layout" id="layout">
+    <section class="inbox-pane pane" id="inbox-pane" aria-label="Inbox"></section>
+    <section class="paper-pane pane" id="paper-pane" aria-label="The PDF"></section>
+    <section class="review-pane pane" id="review-pane" aria-label="Review" tabindex="-1"></section>
+    <section class="books-pane pane" id="books-pane" aria-label="Export and audit trail" tabindex="-1"></section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="sr-only" id="announce" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
