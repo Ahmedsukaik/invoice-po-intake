@@ -101,7 +101,10 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
 
     ui.title("An invoice arrives.")                                   # 1
     ui.tap(ui.button("Bring in invoice 01"))
-    ui.title("Read, checked, matched to its PO. Approve it.")         # 2
+    ui.title("Read, checked and matched to PO-2026-0101.")
+    ui.on_screen(page.locator(".paper-pane .mark").first if width >= 900 else page.locator(".paper-pane .sheet"))
+    ui.tap(page.get_by_role("button", name="Next: your turn"))
+    ui.title("Your turn: approve it.")                                # 2
     approve = page.locator("[data-approve]")
     assert "ring" in (approve.get_attribute("class") or "")
     ui.tap(approve)
@@ -165,7 +168,7 @@ def test_no_jargon_on_the_way(browser, site):
     ui = Page(browser, site)
     ui.button("Start the demo").click()
     ui.button("Bring in invoice 01").click()
-    ui.title("Approve it")
+    ui.title("Read, checked and matched")
     visible = ui.page.evaluate("document.body.innerText").lower()
     for word in ("token", "sha-256", "doc_01", "fingerprint", "needs_review", "http"):
         assert word not in visible, word
@@ -176,7 +179,7 @@ def test_hovering_a_value_marks_its_line_on_the_page(browser, site):
     ui = Page(browser, site)
     ui.button("Start the demo").click()
     ui.button("Bring in invoice 01").click()
-    ui.title("Approve it")
+    ui.title("Read, checked and matched")
     ui.page.locator(".f-row[data-key='total']").hover()
     active = ui.page.locator(".mark.active")
     assert active.count() == 1 and "total" in (active.get_attribute("data-mark") or "")
@@ -330,7 +333,7 @@ def test_dark_mode_keeps_the_sheet_white_and_the_text_readable(browser, site):
     ui = Page(browser, site, color_scheme="dark")
     ui.button("Start the demo").click()
     ui.button("Bring in invoice 01").click()
-    ui.title("Approve it")
+    ui.title("Read, checked and matched")
     page = ui.page
     assert page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(19, 22, 27)"
     assert page.locator(".paper-pane .sheet").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(255, 255, 255)"

@@ -337,6 +337,7 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
 .f-label { font-weight: 700; }
 .finding.is-error .f-label, .finding.is-blocking .f-label { color: var(--red-ink); }
 .f-msg { color: var(--ink-2); overflow-wrap: anywhere; }
+.f-msg .f-label { display: inline; }
 .finding:has(.tick-row) { display: block; }
 .tick-row { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--space-2); padding: var(--space-2); margin: 0 calc(-1 * var(--space-2)); border-radius: var(--radius-md); cursor: pointer; min-height: var(--touch); }
 .tick-row:hover { background: var(--red-soft); }
@@ -529,6 +530,11 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
   .story-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   body[data-focus="review"].in-story .story-text, body[data-focus="books"].in-story .story-text { display: none; }
   .story-kicker { font-size: 11px; }
+}
+
+/* touch screens of any width: every control at least 44 px tall */
+@media (pointer: coarse) {
+  .seg button, .btn, .btn-link, .chip, .file-chip, .q-row, .add-row, .books-link, .sheet-caption a { min-height: var(--touch); }
 }
 
 /* =====================================================================

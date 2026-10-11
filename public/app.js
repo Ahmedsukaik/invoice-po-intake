@@ -139,9 +139,16 @@
           <p class="story-fine">The demo PDFs are read with fixed rules that know one layout. Other layouts need the AI reader. Without it, they go to a person. The date is fixed at 11 October 2026.</p>`,
         actions: `${primary("start", "Start the demo")}<button type="button" class="btn-link" data-go="skip">Skip to free use</button>`,
         focus: "review" };
-      case 1: return {
-        main: head(1, "An invoice arrives.") + text("Acme emails invoice INV-A-1001. The clerk drops the PDF into the inbox. Watch what happens to it.") + wait,
-        actions: S.busy ? "" : primary("bring", "Bring in invoice 01"), focus: "paper" };
+      case 1: {
+        const d = byKey("01");
+        if (d) return {
+          main: head(1, "Read, checked and matched to PO-2026-0101.") +
+            text(`Every value on the right came from the line marked on the page.${isPhone() ? " Tap one to see where." : " Hover one to see where."} <b>The checks found nothing wrong</b>, and the purchase order covers the full amount.`),
+          actions: primary("next", "Next: your turn"), focus: "paper" };
+        return {
+          main: head(1, "An invoice arrives.") + text("Acme emails invoice INV-A-1001. The clerk drops the PDF into the inbox. Watch what happens to it.") + wait,
+          actions: S.busy ? "" : primary("bring", "Bring in invoice 01"), focus: "paper" };
+      }
       case 2: {
         const d = byKey("01");
         if (decided(d)) return {
@@ -150,8 +157,8 @@
               : "Your approval is in the audit trail. The invoice now waits for the export, and nobody can change it."),
           actions: primary("next", "Next: new bank details"), focus: "paper" };
         return {
-          main: head(2, "Read, checked, matched to its PO. Approve it.") +
-            text(`Every value on the right came from the line marked on the page. ${isPhone() ? "" : "Hover one to see where. "}<b>Nothing is wrong, and PO-2026-0101 covers it.</b> Approve it in the review panel.`),
+          main: head(2, "Your turn: approve it.") +
+            text("Nothing reaches accounting until a person approves it. <b>You are Sara, a reviewer.</b> Approve it in the review panel."),
           actions: isPhone() && S.pane !== "review" ? primary("show-review", "Open the review") : "", focus: "review" };
       }
       case 3: {
@@ -258,16 +265,14 @@
       if (!target) return;
       const pane = target.closest(".pane");
       if (!pane) return;
-      const p = pane.getBoundingClientRect(), box = target.closest(".decision");
-      const b = box && box.getBoundingClientRect(), t = target.getBoundingClientRect();
-      if (b && b.height <= p.height - 16 && (b.top < p.top + 8 || b.bottom > p.bottom - 8)) pane.scrollTop += b.top - p.top - 8;
-      else if (!(b && b.height <= p.height - 16) && (t.top < p.top + 8 || t.bottom > p.bottom - 8)) pane.scrollTop += t.top - p.top - Math.max(12, (p.height - t.height) / 3);
+      const p = pane.getBoundingClientRect(), box = target.closest(".decision") || target;
+      const b = box.getBoundingClientRect(), t = target.getBoundingClientRect();
+      const bottomFromTop = b.bottom - p.top + pane.scrollTop;
+      if (bottomFromTop <= p.height - 8) pane.scrollTop = 0;
+      else if (b.height <= p.height - 16) pane.scrollTop += b.top - p.top - 8;
+      else if (t.top < p.top + 8 || t.bottom > p.bottom - 8) pane.scrollTop += t.top - p.top - Math.max(12, (p.height - t.height) / 3);
       if (S.keyboard) target.focus?.({ preventScroll: true });
     });
-  }
-  function advance() {
-    if (S.step === 1 && byKey("01")) setStep(2);
-    else renderStory();
   }
 
   async function go(what) {
@@ -280,7 +285,6 @@
         const key = STORY[S.step];
         await addSample(key);
         if (S.step === 3) S.reasons[byKey("04")?.id] = REJECT_04;
-        if (S.step === 1) { advance(); return; }
         const c = storyContent();
         S.main = "doc"; render();
         if (isPhone()) setPane(c.focus, true);
@@ -427,12 +431,10 @@
   }
   function findingLine(f, withTick, ticked) {
     const sev = f.severity === "error" ? "is-error" : f.severity === "blocking" ? "is-blocking" : f.severity === "warning" ? "is-warning" : "is-info";
-    let msg = f.message;
-    if (msg.toLowerCase().startsWith(f.label.toLowerCase()) && /^[:.]\s*\S/.test(msg.slice(f.label.length))) {
-      const rest = msg.slice(f.label.length).replace(/^[:.]\s*/, "");
-      msg = rest[0].toUpperCase() + rest.slice(1);
-    }
-    const body = `<span class="f-label">${esc(f.label)}</span><span class="f-msg">${esc(msg)}</span>`;
+    const msg = f.message, lead = msg.slice(0, f.label.length);
+    const body = lead.toLowerCase() === f.label.toLowerCase()
+      ? `<span class="f-msg"><b class="f-label">${esc(lead)}</b>${esc(msg.slice(f.label.length))}</span>`
+      : `<span class="f-label">${esc(f.label)}</span><span class="f-msg">${esc(msg)}</span>`;
     if (withTick) return `<li class="finding ${sev}"><label class="tick-row"><input type="checkbox" data-ack="${esc(f.id)}"${ticked ? " checked" : ""}><span class="tick-box" aria-hidden="true">${icon("check", "i i-xs")}</span><span class="f-body">${body}</span></label></li>`;
     return `<li class="finding ${sev}"><span class="f-mark" aria-hidden="true">${f.severity === "info" ? icon("check", "i i-xs") : icon(f.severity === "warning" ? "alert" : "x", "i i-xs")}</span><span class="f-body">${body}</span></li>`;
   }
@@ -533,6 +535,7 @@
   }
   function renderReview() {
     const pane = $("#review-pane"), d = current();
+    if (pane.dataset.doc !== (d ? d.id : "")) { pane.scrollTop = 0; $("#paper-pane").scrollTop = 0; pane.dataset.doc = d ? d.id : ""; }
     if (!d) {
       pane.innerHTML = `<div class="review-empty">${icon("inbox", "i i-xl")}<h2>Nothing to review yet</h2><p>${inStory() ? "The story brings in the first invoice." : "Pick a document in the inbox, or bring in a sample."}</p></div>`;
       return;
@@ -673,6 +676,7 @@
     if (!data) return;
     if (!data.result.ok) { S.errors[id] = data.result.message; render(); announce(data.result.message); return; }
     announce(`Approved by ${reviewerName(S.reviewer)}.`);
+    if (S.step === 1) { setStep(2); return; }
     if (inStory()) { if (isPhone()) setPane(storyFocus(), true); renderStory(); revealStory(); }
   }
   async function rejectDoc(id) {
@@ -685,6 +689,7 @@
     if (!data.result.ok) { S.errors[id] = data.result.message; render(); return; }
     S.rejecting = null; render();
     announce("Rejected.");
+    if (S.step === 1) { setStep(2); return; }
     if (inStory()) { if (isPhone()) setPane(storyFocus(), true); revealStory(); }
   }
   async function saveTyped(id) {
@@ -724,7 +729,7 @@
       else if (ds.suggest) { S.notes[ds.suggest] = NOTE_06; render(); revealTarget(); }
       else if (ds.reviewer) { S.reviewer = ds.reviewer; delete S.errors[S.selected]; save(); render(); }
       else if (ds.ai) { S.ai = ds.ai === "on"; save(); renderBooks(); }
-      else if (ds.export) { (async () => { const data = await act({ type: "export" }, "Exporting."); if (data) { toast(data.result.message); announce(data.result.message); if (inStory()) revealStory(); } })(); }
+      else if (ds.export) { (async () => { const data = await act({ type: "export" }, "Exporting."); if (data) { if (!inStory()) toast(data.result.message); announce(data.result.message); if (inStory()) revealStory(); } })(); }
       else if (ds.download) download(ds.download);
       else if (ds.pane) { setPane(ds.pane, false); if (ds.pane !== "books" && S.main === "books" && ds.pane !== "inbox") { S.main = "doc"; render(); } }
       else if (ds.key && t.closest("#review-pane")) {
