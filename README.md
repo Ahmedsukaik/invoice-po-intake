@@ -25,6 +25,11 @@ travels with the invoice. Some problems, like an unknown supplier or changed ban
 cannot be approved at all. Every step is logged: who uploaded it, who changed what, who
 approved it and when.
 
+![A 45-second tour of the reviewer page: changed bank details that cannot be approved, totals that do not add up, a clean invoice approved, the export and the audit log.](docs/img/tour.gif)
+
+*A silent 45-second recording of the real reviewer page running on the demo PDFs. The
+captions at the bottom were added for the recording.*
+
 The reviewer page works on a laptop and on a phone. This is a reference build on fictional
 demo documents, not a client system. Today it reads only the demo PDF layout. Reading real
 supplier PDFs needs the Claude reader, which is built and tested against a simulated API
