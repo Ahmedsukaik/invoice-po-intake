@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set active = 'queue' %}
+{% set type = values.get('doc_type') %}
+{% block title %}Correct {{ doc.filename }}{% endblock %}
+{% block body %}
+<a class="back" href="/documents/{{ doc.id }}">&larr; Back to the document</a>
+<div class="dochead">
+  <div>
+    <h1>Correct fields</h1>
+    <p class="muted">{{ doc.filename }}. Type what the PDF says. Every change is saved with the old and new value, your name and the time, and the checks run again.</p>
+  </div>
+  <a class="btn" href="/documents/{{ doc.id }}/pdf" target="_blank" rel="noopener">Open original PDF</a>
+</div>
+{% if error %}<div class="alert error">{{ error }} Nothing was saved; what you typed is still below.</div>{% endif %}
+<form method="post" action="/documents/{{ doc.id }}/edit" class="card">
+  <button class="default-submit" tabindex="-1" aria-hidden="true">Save corrections</button>{# Enter in a field saves #}
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="version" value="{{ doc.version }}">
+  <div class="formgrid">
+    <label>Document type
+      <select name="f_doc_type">
+        <option value="" {% if not type %}selected{% endif %}>(not set)</option>
+        <option value="invoice" {% if type == 'invoice' %}selected{% endif %}>Invoice</option>
+        <option value="purchase_order" {% if type == 'purchase_order' %}selected{% endif %}>Purchase order</option>
+      </select>
+    </label>
+    {% set shown = FIELDS_BY_TYPE[type] if type in FIELDS_BY_TYPE else HEADER_FIELDS.keys()|reject('equalto', 'doc_type')|list %}
+    {% for name in shown %}
+      {% set spec = HEADER_FIELDS[name] %}
+      {% set locked = name in BANK_FIELDS and doc.original_fields.get(name) %}
+      <label>{{ spec.label }}
+        <input type="text" name="f_{{ name }}" value="{{ values.get(name) or '' }}" maxlength="200" {% if spec.kind == 'date' %}placeholder="YYYY-MM-DD" {% endif %}{% if locked %}readonly title="Bank details read from the PDF cannot be changed"{% endif %}>
+        {% if locked %}<span class="tiny muted">Read from the PDF; cannot be changed here.</span>{% endif %}
+      </label>
+    {% endfor %}
+  </div>
+  <div class="cardhead">
+    <h2>Line items</h2>
+    <button class="btn small" name="more_rows" value="1" formnovalidate>More empty rows</button>
+  </div>
+  <p class="tiny muted">Clear every cell of a row to remove it. Use the empty rows to add lines; "More empty rows" keeps what you typed and saves nothing.</p>
+  <input type="hidden" name="line_count" value="{{ rows|length }}">
+  <div class="scroll">
+  <table class="grid edit">
+    <thead><tr><th>#</th>{% for name, spec in LINE_FIELDS.items() %}<th>{{ spec.label }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for l in rows %}
+      {% set i = loop.index0 %}
+      <tr><td class="muted">{{ i + 1 }}</td>
+      {% for name, spec in LINE_FIELDS.items() %}
+        <td><input type="text" name="l{{ i }}_{{ name }}" value="{{ l.get(name) or '' }}" maxlength="200" class="{{ 'wide' if name == 'description' else '' }}"></td>
+      {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <label class="note">Note (optional)<input type="text" name="note" maxlength="300" value="{{ note or '' }}"></label>
+  <div class="actions"><button class="btn primary">Save corrections</button> <a class="btn" href="/documents/{{ doc.id }}">Cancel</a></div>
+</form>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set active = 'audit' %}
+{% block title %}Audit log{% endblock %}
+{% block body %}
+<div class="head">
+  <h1>Audit log</h1>
+  <p class="muted">Every upload, reading, check, correction, decision, export and refused request. Newest first. Times are UTC.</p>
+</div>
+<section class="card flush">
+<div class="scroll"><table class="grid small">
+  <thead><tr><th>When</th><th>Who</th><th>Role</th><th>Action</th><th>Document</th><th>Outcome</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for e in entries %}
+  <tr><td class="tiny nowrap">{{ e.ts|when }}</td><td>{{ e.actor }}</td><td class="muted">{{ e.role }}</td><td>{{ e.action }}</td>
+      <td>{% if e.document_id %}<a class="mono tiny" href="/documents/{{ e.document_id }}">{{ e.document_id }}</a>{% endif %}</td>
+      <td><span class="outcome o-{{ e.outcome }}">{{ e.outcome }}</span></td><td class="mono tiny clip wide">{{ e.detail or '' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+</section>
+{% endblock %}

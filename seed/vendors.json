@@ -1,0 +1,31 @@
+[
+  {
+    "id": "V001",
+    "name": "Acme Demo Components Ltd",
+    "aliases": [
+      "Acme Demo Components Limited"
+    ],
+    "iban": "GB77 DEMO 4000 0110 0000 01",
+    "currency": "GBP",
+    "sort_code": "40-00-01",
+    "account_number": "10000001"
+  },
+  {
+    "id": "V002",
+    "name": "Brightline Demo Packaging Ltd",
+    "aliases": [],
+    "iban": "GB79 DEMO 4000 0220 0000 02",
+    "currency": "GBP",
+    "sort_code": "40-00-02",
+    "account_number": "20000002"
+  },
+  {
+    "id": "V003",
+    "name": "Cobalt Demo Logistics Ltd",
+    "aliases": [],
+    "iban": "GB81 DEMO 4000 0330 0000 03",
+    "currency": "GBP",
+    "sort_code": "40-00-03",
+    "account_number": "30000003"
+  }
+]

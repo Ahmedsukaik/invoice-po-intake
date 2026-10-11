@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Queue{% endblock %} · Invoice and PO intake</title>
+<link rel="icon" href="/favicon.ico" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><span class="logo">IP</span><span>Invoice and PO intake</span></a>
+  {% if me %}
+  <nav>
+    <a href="/" {% if active == 'queue' %}class="on"{% endif %}>Queue</a>
+    <a href="/purchase-orders" {% if active == 'pos' %}class="on"{% endif %}>PO register</a>
+    {% if me.can('upload') %}<a href="/upload" {% if active == 'upload' %}class="on"{% endif %}>Upload</a>{% endif %}
+    {% if me.can('export') %}<a href="/exports" {% if active == 'exports' %}class="on"{% endif %}>Exports</a>{% endif %}
+    {% if me.can('audit') %}<a href="/audit" {% if active == 'audit' %}class="on"{% endif %}>Audit log</a>{% endif %}
+    <form method="post" action="/logout" class="nav-signout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="linkish">Sign out</button></form>
+  </nav>
+  <div class="me">
+    <span>{{ me.name }}</span><span class="role">{{ me.role }}</span>
+    <form method="post" action="/logout" class="signout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="linkish">Sign out</button></form>
+  </div>
+  {% endif %}
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+<footer class="foot">Reference build with demo data. Nothing is exported to accounting until a person approves it.</footer>
+</body>
+</html>

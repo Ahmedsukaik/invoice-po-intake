@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set active = 'exports' %}
+{% block title %}Exports{% endblock %}
+{% block body %}
+<div class="head">
+  <h1>Exports</h1>
+  <p class="muted">Approved documents are written to CSV and JSON files for the accounting import. Each document is exported only once.
+  The files are in <span class="mono">{{ outbox }}</span>, one folder per batch, and can be downloaded below.</p>
+</div>
+{% if notice %}<div class="alert ok">{{ notice }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<section class="card">
+  <form method="post" action="/exports" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <span>{{ waiting }} approved document{{ 's' if waiting != 1 }} waiting.</span>
+    <button class="btn primary" {% if not waiting %}disabled{% endif %}>Export now</button>
+  </form>
+</section>
+<section class="card flush">
+{% if exports %}
+<div class="scroll"><table class="grid exports">
+  <thead><tr><th>Batch</th><th>Created</th><th>By</th><th>Documents</th><th>Files</th></tr></thead>
+  <tbody>
+  {% for e in exports %}
+  <tr><td class="mono e-batch">{{ e.batch_id }}{% if not e.finished_at %}<div class="tiny bad">not finished: see the user guide (resolve-export)</div>{% endif %}</td>
+      <td class="tiny e-when">{{ e.created_at|when }}</td><td class="e-by">{{ e.created_by }}</td>
+      <td class="e-docs">{% for d in e.document_ids %}<a class="mono tiny" href="/documents/{{ d }}">{{ d }}</a> {% endfor %}</td>
+      <td class="tiny e-files">{% for name in e.files %}<a href="/exports/{{ e.batch_id }}/{{ name }}">{{ name }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="empty">No exports yet.</p>{% endif %}
+</section>
+{% endblock %}

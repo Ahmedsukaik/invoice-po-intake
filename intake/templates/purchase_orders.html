@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% set active = 'pos' %}
+{% block title %}PO register{% endblock %}
+{% block body %}
+<div class="head">
+  <h1>PO register</h1>
+  <p class="muted">Purchase orders that invoices are matched against. They come from the ERP (seed files in this demo). Nothing approved here changes this list.</p>
+</div>
+<section class="card flush">
+<div class="scroll"><table class="grid">
+  <thead><tr><th>PO</th><th>Vendor</th><th>Order date</th><th>Lines</th><th class="num">Net amount</th><th>Status</th><th>Source</th></tr></thead>
+  <tbody>
+  {% for po in pos %}
+  <tr><td class="mono">{{ po.number }}</td><td>{{ vendors[po.vendor_id].name if po.vendor_id in vendors else po.vendor_id }}</td>
+      <td class="mono">{{ po.order_date or '' }}</td>
+      <td class="tiny">{% for l in po.lines %}{{ l.quantity }} x {{ l.sku or l.description }} @ {{ l.unit_price }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td class="num">{{ po.net|money }} <span class="muted">{{ po.currency }}</span></td><td>{{ po.status }}</td>
+      <td>{{ 'ERP' if po.source == 'erp' else po.source }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+</section>
+{% endblock %}

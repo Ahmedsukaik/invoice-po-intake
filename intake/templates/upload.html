@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% set active = 'upload' %}
+{% block title %}Upload{% endblock %}
+{% block body %}
+<section class="card narrow">
+  <h1>Upload a PDF</h1>
+  <p class="muted">An invoice or a purchase order, one PDF at a time (or drop files into the inbox folder). It is read, checked and put in the queue for a reviewer. The same file twice is recognised and not added again.</p>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" action="/upload" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="file" name="file" accept="application/pdf,.pdf" required>
+    <button class="btn primary">Upload</button>
+  </form>
+</section>
+{% endblock %}

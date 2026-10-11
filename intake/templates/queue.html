@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set active = 'queue' %}
+{% block title %}Queue{% endblock %}
+{% block body %}
+<div class="head">
+  <h1>Documents</h1>
+  <p class="muted">Every invoice and purchase order waits here until a reviewer approves or rejects it.</p>
+</div>
+<div class="tabs">
+  {% for key, label in TABS %}
+  <a href="/?status={{ key }}" class="{% if status == key %}on{% endif %}">{{ label }} <span class="count">{{ counts.get(key, 0) }}</span></a>
+  {% endfor %}
+</div>
+<section class="card flush">
+{% if docs %}
+<table class="grid queue">
+  <thead><tr><th>Document</th><th>Type</th><th>Vendor</th><th>Number</th><th class="num">Total</th><th>Status</th><th>Checks</th><th>Received</th></tr></thead>
+  <tbody>
+  {% for d in docs %}
+  <tr>
+    <td class="c-doc"><a href="/documents/{{ d.id }}" class="strong">{{ d.filename }}</a><div class="tiny muted">{{ d.id }}</div></td>
+    <td class="c-type">{{ {'invoice': 'Invoice', 'purchase_order': 'Purchase order'}.get(d.doc_type, 'Not set') }}</td>
+    <td class="c-vendor">{{ d.vendor_name or '' }}</td>
+    <td class="mono c-num">{{ d.number or '' }}</td>
+    <td class="num c-total">{% if d.total %}{{ d.total|money }} <span class="muted">{{ d.currency or '' }}</span>{% endif %}</td>
+    <td class="c-status"><span class="pill s-{{ d.status }}">{{ STATUS_LABELS[d.status] }}</span></td>
+    <td class="c-checks">
+      {% if d.findings.error %}<span class="badge error">{{ d.findings.error }} error{{ 's' if d.findings.error > 1 }}</span>{% endif %}
+      {% if d.findings.blocking %}<span class="badge blocking">{{ d.findings.blocking }} blocking</span>{% endif %}
+      {% if d.findings.warning %}<span class="badge warning">{{ d.findings.warning }} warning{{ 's' if d.findings.warning > 1 }}</span>{% endif %}
+      {% if not (d.findings.error or d.findings.blocking or d.findings.warning) %}<span class="badge ok">no issues</span>{% endif %}
+    </td>
+    <td class="tiny c-when">{{ d.uploaded_at|when }}<div class="muted">{{ d.uploaded_by }}</div></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Nothing here.</p>
+{% endif %}
+</section>
+{% if total > docs|length %}
+<p class="pager">Showing {{ first }} to {{ last }} of {{ total }}, newest first.
+  {% if page_no > 1 %}<a href="/?status={{ status }}&page_no={{ page_no - 1 }}">Newer</a>{% endif %}
+  {% if last < total %}<a href="/?status={{ status }}&page_no={{ page_no + 1 }}">Older</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

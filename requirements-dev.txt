@@ -1,0 +1,4 @@
+# For the tests and for regenerating the sample PDFs (samples/make_samples.py).
+-r requirements.txt
+pytest>=8,<10
+fpdf2>=2.8,<3

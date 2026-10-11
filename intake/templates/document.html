@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% set active = 'queue' %}
+{% set f = doc.fields %}
+{% block title %}{{ doc.filename }}{% endblock %}
+{% block body %}
+<a class="back" href="/">&larr; Back to the queue</a>
+<div class="dochead">
+  <div>
+    <h1>{{ doc.filename }} <span class="pill s-{{ doc.status }}">{{ STATUS_LABELS[doc.status] }}</span></h1>
+    <p class="muted">
+      {{ {'invoice': 'Invoice', 'purchase_order': 'Purchase order'}.get(f.doc_type, 'Unknown type') }}
+      {% if f.vendor_name %} &middot; {{ f.vendor_name }}{% endif %}
+      {% set number = f.invoice_number if f.doc_type == 'invoice' else f.po_number %}
+      {% if number %} &middot; <span class="mono">{{ number }}</span>{% endif %}
+      &middot; received {{ doc.uploaded_at|when }} from {{ doc.uploaded_by }}
+      &middot; read by {{ doc.extractor }} &middot; {{ doc.page_count or 0 }} page{{ 's' if (doc.page_count or 0) != 1 }}
+    </p>
+  </div>
+  <a class="btn" href="/documents/{{ doc.id }}/pdf" target="_blank" rel="noopener">Open original PDF</a>
+</div>
+
+{% if notice %}<div class="alert ok">{{ notice }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if doc.manual_reason and reviewable %}
+  {% if typed_by %}<div class="alert manual"><strong>Typed in by {{ typed_by|join(', ') }}.</strong> Waiting for a second reviewer to check it against the PDF and approve or reject it.</div>
+  {% else %}<div class="alert manual"><strong>Needs a person to type it in.</strong> {{ doc.manual_reason }}</div>{% endif %}
+{% endif %}
+
+<div class="cols">
+<div class="main">
+  <section class="card">
+    <div class="cardhead">
+      <h2>Fields</h2>
+      {% if reviewable and me.can('review') %}<a class="btn small" href="/documents/{{ doc.id }}/edit">Correct fields</a>{% endif %}
+    </div>
+    <p class="tiny muted">On the right: the page and the line of the PDF each value was read from.{% if masked %} Bank details are shown to reviewers only.{% endif %}</p>
+    <table class="fields">
+      <tbody>
+      {% for name in (field_names or HEADER_FIELDS.keys()|reject('equalto', 'doc_type')|list) %}
+        {% if not (name in ('vendor_sort_code', 'vendor_account') and f.get(name) is none and f.vendor_iban) %}
+        {% set issues = by_field.get(name, []) %}
+        {% set worst = issues[0].severity if issues else '' %}
+        <tr class="{{ 'flag-' ~ worst if worst in ('error', 'blocking', 'warning') else '' }}">
+          <th>{{ HEADER_FIELDS[name].label }}</th>
+          <td class="value {{ 'mono' if HEADER_FIELDS[name].kind in ('ref', 'iban', 'date', 'sortcode', 'account') }}">
+            {% set v = f.get(name) %}
+            {% if v is none %}<span class="empty-val">empty</span>
+            {% elif masked and name in BANK_FIELDS %}<span class="muted">ending</span> {{ v[-4:] }}
+            {% elif HEADER_FIELDS[name].kind == 'amount' %}{{ v|money }}
+            {% elif HEADER_FIELDS[name].kind == 'iban' %}{{ v|iban }}
+            {% elif HEADER_FIELDS[name].kind == 'percent' %}{{ v }}%
+            {% else %}{{ v }}{% endif %}
+            {% if name in doc.corrected %}<span class="tag">corrected</span>{% endif %}
+          </td>
+          <td class="evidence">
+            {% set ev = doc.evidence.get(name) %}
+            {% if ev %}<span class="page">p.{{ ev.page or '?' }}</span> &ldquo;{{ ev.text }}&rdquo;{% endif %}
+          </td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Line items</h2>
+    {% if lines %}
+    <div class="scroll lines-wrap">
+    <table class="grid lines">
+      <thead><tr><th>#</th><th>Item</th><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th><th class="num">Qty &times; price</th></tr></thead>
+      <tbody>
+      {% for l in lines %}
+      <tr class="{{ '' if l.ok else 'flag-blocking' }}">
+        <td class="muted l-n">{{ l.n }}</td>
+        <td class="mono l-sku">{{ l.sku or '' }}</td>
+        <td class="l-desc">{{ l.description or '' }}</td>
+        <td class="l-meta"><span class="mono">{{ l.sku or '' }}</span> &middot; {{ l.quantity or '?' }} &times; {{ l.unit_price or '?' }}</td>
+        <td class="num l-qty">{{ l.quantity or '' }}</td>
+        <td class="num l-price">{{ l.unit_price or '' }}</td>
+        <td class="num l-amount">{{ l.line_total|money }}</td>
+        <td class="num l-check {{ 'ok' if l.ok else 'bad' }}">{% if l.expected is not none %}{{ l.expected|money }} {{ '&#10003;'|safe if l.ok else '&#10007;'|safe }}{% else %}?{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="empty">No line items.</p>{% endif %}
+  </section>
+
+  {% if corrections %}
+  <section class="card">
+    <h2>Corrections</h2>
+    <div class="scroll">
+    <table class="grid small">
+      <thead><tr><th>When</th><th>Who</th><th>Field</th><th>Was</th><th>Now</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for c in corrections %}
+      <tr><td class="tiny">{{ c.corrected_at|when }}</td><td>{{ c.corrected_by }}</td><td>{{ c.field }}</td>
+          <td class="mono clip">{{ c.old_value if c.old_value is not none else '(empty)' }}</td>
+          <td class="mono clip">{{ c.new_value if c.new_value is not none else '(empty)' }}</td><td>{{ c.note or '' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <h2>History</h2>
+    <ol class="history">
+    {% for e in history %}
+      <li><span class="tiny muted">{{ e.ts|when }}</span> <strong>{{ e.actor }}</strong> {{ e.action }} <span class="outcome o-{{ e.outcome }}">{{ e.outcome }}</span></li>
+    {% endfor %}
+    </ol>
+  </section>
+
+  {% if doc.text_layer %}
+  <details class="card">
+    <summary>Text read from the PDF</summary>
+    <pre class="textlayer">{{ doc.text_layer }}</pre>
+  </details>
+  {% endif %}
+</div>
+
+<aside class="side">
+  <section class="card">
+    <h2>Findings</h2>
+    {% if doc.findings %}
+    <ul class="findings">
+    {% for x in doc.findings %}
+      <li class="sev-{{ x.severity }} {{ 'refused' if x.id in refused_ids }}">
+        <div class="ftop"><span class="sev">{{ x.severity }}</span><span class="flabel">{{ x.label or x.code }}</span></div>
+        <p>{{ x.message }}</p>
+        {% if x.related %}<p class="tiny"><a href="/documents/{{ x.related }}">Open {{ x.related }}</a></p>{% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+    {% else %}<p class="badge ok">No findings.</p>{% endif %}
+    {% if doc.checked_at %}<p class="tiny muted">Checked {{ doc.checked_at|when }}</p>{% endif %}
+  </section>
+
+  {% if reviewable %}
+  <section class="card decide">
+    <h2>Decision</h2>
+    {% if me.can('review') %}
+      {% if errors %}
+      <p class="blocked">Errors must be fixed before this can be approved. If they cannot be fixed (unknown vendor, changed bank details), reject it.</p>
+      {% endif %}
+      {% if second_reviewer_needed %}
+      <p class="blocked">You typed in or changed values on this document, so another reviewer must approve it (four-eyes rule). You can still reject it.</p>
+      {% endif %}
+      <form method="post" action="/documents/{{ doc.id }}/approve" class="stack">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="version" value="{{ doc.version }}">
+        {% for x in blocking %}
+        <label class="ack"><input type="checkbox" name="ack" value="{{ x.id }}"><span>I have checked &quot;<strong>{{ x.label or x.code }}</strong>&quot; and approve anyway</span></label>
+        {% endfor %}
+        {% if blocking %}<label>Why (required when approving anyway)<textarea name="note" rows="2" maxlength="500"></textarea></label>{% endif %}
+        <button class="btn primary" {% if errors or second_reviewer_needed %}disabled{% endif %}>Approve</button>
+      </form>
+      <form method="post" action="/documents/{{ doc.id }}/reject" class="stack sep">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Reason for rejecting<input type="text" name="reason" maxlength="500" required></label>
+        <button class="btn danger">Reject</button>
+      </form>
+      <div class="sep inline-forms">
+        <form method="post" action="/documents/{{ doc.id }}/recheck">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn small">Re-run checks</button>
+        </form>
+        {% if can_read_again %}
+        <form method="post" action="/documents/{{ doc.id }}/read-again">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn small">Read the PDF again</button>
+        </form>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="muted">Waiting for a reviewer. Your role ({{ me.role }}) can view it but not decide.</p>
+      {% if can_read_again and me.can('upload') %}
+      <form method="post" action="/documents/{{ doc.id }}/read-again" class="sep">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn small">Read the PDF again</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </section>
+  {% else %}
+  <section class="card">
+    <h2>Decision</h2>
+    <p><span class="pill s-{{ doc.status }}">{{ STATUS_LABELS[doc.status] }}</span> by {{ doc.decided_by or '?' }} at {{ doc.decided_at|when }}</p>
+    {% if doc.decision_note %}<p>&ldquo;{{ doc.decision_note }}&rdquo;</p>{% endif %}
+    {% if doc.acknowledged %}<p class="tiny">Approved despite: {{ doc.acknowledged|join(', ') }}</p>{% endif %}
+    {% if doc.export_batch and doc.status == 'exported' %}<p class="tiny">Export batch <span class="mono">{{ doc.export_batch }}</span>, {{ doc.exported_at|when }}</p>{% endif %}
+  </section>
+  {% endif %}
+</aside>
+</div>
+{% endblock %}

@@ -1,0 +1,104 @@
+[
+  {
+    "number": "PO-2026-0101",
+    "vendor_id": "V001",
+    "currency": "GBP",
+    "order_date": "2026-09-21",
+    "lines": [
+      {
+        "sku": "AC-100",
+        "description": "Steel bracket, 40 mm",
+        "quantity": "200",
+        "unit_price": "4.50"
+      },
+      {
+        "sku": "AC-220",
+        "description": "Hinge set, zinc",
+        "quantity": "50",
+        "unit_price": "12.00"
+      }
+    ]
+  },
+  {
+    "number": "PO-2026-0102",
+    "vendor_id": "V002",
+    "currency": "GBP",
+    "order_date": "2026-09-22",
+    "lines": [
+      {
+        "sku": "BP-310",
+        "description": "Carton, double wall, 400 x 300 mm",
+        "quantity": "500",
+        "unit_price": "0.85"
+      },
+      {
+        "sku": "BP-420",
+        "description": "Stretch film roll, 500 mm",
+        "quantity": "120",
+        "unit_price": "3.25"
+      }
+    ]
+  },
+  {
+    "number": "PO-2026-0103",
+    "vendor_id": "V003",
+    "currency": "GBP",
+    "order_date": "2026-09-24",
+    "lines": [
+      {
+        "sku": "CL-01",
+        "description": "Pallet delivery, zone 2",
+        "quantity": "6",
+        "unit_price": "85.00"
+      }
+    ]
+  },
+  {
+    "number": "PO-2026-0104",
+    "vendor_id": "V001",
+    "currency": "GBP",
+    "order_date": "2026-09-25",
+    "lines": [
+      {
+        "sku": "AC-310",
+        "description": "Mounting plate, steel",
+        "quantity": "100",
+        "unit_price": "8.00"
+      }
+    ]
+  },
+  {
+    "number": "PO-2026-0105",
+    "vendor_id": "V002",
+    "currency": "GBP",
+    "order_date": "2026-10-02",
+    "lines": [
+      {
+        "sku": "BP-310",
+        "description": "Carton, double wall, 400 x 300 mm",
+        "quantity": "300",
+        "unit_price": "0.85"
+      },
+      {
+        "sku": "BP-505",
+        "description": "Edge protector, 1 m",
+        "quantity": "200",
+        "unit_price": "0.40"
+      }
+    ]
+  },
+  {
+    "number": "PO-2026-0106",
+    "vendor_id": "V001",
+    "currency": "GBP",
+    "order_date": "2026-09-28",
+    "lines": [
+      {
+        "sku": "AC-100",
+        "description": "Steel bracket, 40 mm",
+        "quantity": "100",
+        "unit_price": "4.50"
+      }
+    ]
+  }
+]
