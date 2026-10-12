@@ -5,8 +5,11 @@ Rules enforced here (and nowhere else):
 - Every correction is stored with the old and the new value, who and when.
 - A value read from the PDF can be changed but not removed. Changing it is itself a blocking
   finding (value_corrected), so a correction cannot quietly make a problem disappear.
-- Bank details read from the PDF cannot be edited at all. Typed-in bank details are a
-  blocking finding (bank_typed).
+- Bank details and the document type read from the PDF cannot be edited at all. Typed-in
+  bank details are a blocking finding (bank_typed).
+- An error that no correction can lift (checks.PERMANENT: changed bank details, an unknown
+  vendor, a copy of an approved invoice...) found on the values as first read stays in force,
+  whatever is corrected later.
 - Four eyes: whoever typed in or changed any value on a document (a field, including one the
   reader left empty, or a line) may not approve it. Another reviewer approves.
 - Approval re-runs every check on the current values, holding the database write lock, so
@@ -96,6 +99,9 @@ def _planned_changes(doc: dict, fields: dict[str, Any] | None, lines: list[Any] 
         if value == new_fields.get(name):
             continue
         read_from_pdf = doc["original_fields"].get(name)
+        if name == "doc_type" and read_from_pdf:
+            raise ActionRefused(400, "The document type read from the PDF cannot be changed here. If it was read "
+                                     "wrongly, reject the document and send it again.")
         if name in BANK_FIELDS and read_from_pdf:
             raise ActionRefused(400, "Bank details read from the PDF cannot be changed here. They come from the vendor "
                                      "master; a change there goes through its own controlled process.")

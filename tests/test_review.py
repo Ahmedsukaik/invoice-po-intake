@@ -354,3 +354,52 @@ def test_every_step_is_in_the_audit_log(deps):
     assert trail == [("tom", "upload", "ok"), ("reader:rules", "extract", "ok"), ("checks", "check", "ok"),
                      ("sara", "approve", "refused"), ("sara", "correct", "ok"), ("checks", "check", "ok"),
                      ("omar", "approve", "ok")]
+
+
+# ------------------------------------------------------------------ locks that no correction lifts
+def test_the_document_type_read_from_the_pdf_cannot_be_changed(deps):
+    doc = add(deps, "04_changed_bank_details.pdf")
+    with pytest.raises(ActionRefused, match="document type read from the PDF cannot be changed") as refused:
+        review.correct(deps, doc["id"], SARA, {"doc_type": "purchase_order"}, seen_version=doc["version"])
+    assert refused.value.status_code == 400 and deps.store.corrections(doc["id"]) == []
+
+
+def test_new_bank_details_stay_locked_even_if_the_type_was_changed_behind_the_rules(deps):
+    """Even with the type changed (as an older version allowed), the bank check on the values as
+    first read keeps the error, so nobody can tick it away and approve."""
+    doc = add(deps, "04_changed_bank_details.pdf")
+    fields = {**doc["fields"], "doc_type": "purchase_order"}
+    changed = deps.store.correct(doc["id"], doc["version"], fields, doc["lines"], [("doc_type", "invoice", "purchase_order")],
+                                 "sara (reviewer)", None)
+    findings = review.recheck(deps, changed["id"], OMAR)["findings"]
+    assert any(f["code"] == "bank_changed" and f["severity"] == "error" and f["message"].startswith("As first read")
+               for f in findings)
+    with pytest.raises(ActionRefused, match="errors"):
+        review.approve(deps, doc["id"], OMAR, ack(findings), "only a purchase order, nothing to pay")
+    assert deps.store.get(doc["id"])["status"] == "needs_review"
+
+
+def test_a_copy_of_an_approved_invoice_stays_locked_after_its_number_is_changed(deps):
+    first = add(deps, "01_clean_invoice.pdf")
+    review.approve(deps, first["id"], SARA)
+    copy = add(deps, "05_duplicate_invoice.pdf")
+    assert ("duplicate_invoice", "error") in [(f["code"], f["severity"]) for f in copy["findings"]]
+    renamed = review.correct(deps, copy["id"], SARA, {"invoice_number": "INV-A-1001R"}, seen_version=copy["version"])
+    kept = [f for f in renamed["findings"] if f["code"] == "duplicate_invoice"]
+    assert kept and kept[0]["severity"] == "error" and kept[0]["message"].startswith("As first read from the PDF")
+    with pytest.raises(ActionRefused) as refused:
+        review.approve(deps, copy["id"], OMAR, ack(renamed), "a different invoice number now, so it is fine")
+    assert "duplicate_invoice" in codes(refused.value.findings)
+    assert deps.store.get(copy["id"])["status"] == "needs_review"
+
+
+def test_an_unknown_vendor_stays_unknown_after_its_name_is_changed(deps):
+    doc = add(deps, "03_unknown_vendor.pdf")
+    renamed = review.correct(deps, doc["id"], SARA, {"vendor_name": "Acme Demo Components Ltd"})
+    assert ("vendor_unknown", "error") in [(f["code"], f["severity"]) for f in renamed["findings"]]
+
+
+def test_a_correction_that_fixes_a_misread_number_still_works(deps):
+    doc = add(deps, "02_totals_do_not_add_up.pdf")
+    fixed = review.correct(deps, doc["id"], SARA, {"total": "984.00"})
+    assert not [f for f in fixed["findings"] if f["severity"] == "error"]  # nothing permanent on the first reading

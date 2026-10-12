@@ -173,7 +173,11 @@ What the code enforces:
    default). The page greys out the Approve button for that person and says why.
 4. **A correction cannot quietly remove a problem.** A value read from the PDF can be
    changed but not deleted, and changing it is itself a blocking finding
-   (`value_corrected`). Old and new values are kept.
+   (`value_corrected`). Old and new values are kept. The document type read from the PDF
+   cannot be changed. The checks also run on the values as first read, and an error found
+   there that no correction can lift (changed or invalid bank details, an unknown vendor, a
+   currency not accepted, a copy of an approved invoice or PO) stays in force, whatever is
+   corrected later.
 5. **Bank details are checked, not assumed.** The IBAN, or a UK sort code and account
    number, is compared with the vendor master. A difference is an error, because changed
    bank details are a common invoice fraud pattern, and bank details read from the PDF

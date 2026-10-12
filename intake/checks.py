@@ -41,6 +41,12 @@ from .values import (
 
 SEVERITIES = ("error", "blocking", "warning", "info")
 COMMITTED = ("approved", "exporting", "exported")
+# Errors no correction can lift. They are also looked for in the values as first read from the
+# PDF, and when found there they stay, whatever a person changed since: changed or invalid bank
+# details, an unknown vendor, a currency not accepted, a copy of an approved invoice or PO. Such
+# a document is rejected, never edited into shape.
+PERMANENT = ("bank_changed", "bank_invalid", "vendor_unknown", "currency_not_allowed", "duplicate_invoice",
+             "duplicate_po")
 
 # Plain words for each finding, for the tick boxes and the user guide.
 CODE_LABELS = {
@@ -145,6 +151,21 @@ def _note_still_applies(note: dict, doc: dict, corrected: set[str]) -> bool:
 
 
 def run_checks(doc: dict, lookups: Lookups, policy: Policy, today: date) -> list[Finding]:
+    """Every check on the document's current values. For a corrected document, the checks also
+    run on the values as first read, and a PERMANENT error found there is kept."""
+    findings = _check_values(doc, lookups, policy, today)
+    original = doc.get("original_fields") or {}
+    if doc.get("corrected") and original.get("doc_type"):
+        first = {**doc, "fields": original, "lines": doc.get("original_lines") or [], "corrected": [],
+                 "manual_reason": None}
+        current = {f.code for f in findings if f.severity == "error"}
+        for f in _check_values(first, lookups, policy, today):
+            if f.severity == "error" and f.code in PERMANENT and f.code not in current:
+                findings.append(Finding(f.code, "error", f"As first read from the PDF: {f.message}", f.field, f.related))
+    return sort(findings)
+
+
+def _check_values(doc: dict, lookups: Lookups, policy: Policy, today: date) -> list[Finding]:
     out = _Out()
     add = out.add
     fields: dict[str, Any] = doc["fields"]
@@ -189,8 +210,7 @@ def run_checks(doc: dict, lookups: Lookups, policy: Policy, today: date) -> list
     if fields.get("vendor_name") and vendor is None:
         add("vendor_unknown", "error",
             f"'{fields['vendor_name']}' is not in the vendor master. A new vendor must be set up through the normal "
-            "vendor process (with its own checks) before anything can be paid. Reject this document, or correct the "
-            "name if it was misread.", "vendor_name")
+            "vendor process (with its own checks) before anything can be paid. Reject this document.", "vendor_name")
 
     # ---- currency ----------------------------------------------------------------------
     currency = fields.get("currency")

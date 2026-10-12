@@ -172,7 +172,7 @@ line shows.
 | Finding | What it means | What you do |
 |---|---|---|
 | Bank details differ from the vendor master (`bank_changed`) | The IBAN, sort code or account number on the invoice is not the one in the vendor master. The finding shows only the last four characters of the vendor master's details. This is the most common invoice fraud: a fake or altered invoice asking you to pay a new account. It cannot be approved. | Phone the supplier on a number from the vendor master or an earlier contract, never one printed on this invoice. If they did not change banks, reject the document and tell your manager. If they did, the change goes through your normal vendor master process; afterwards choose **Re-run checks**. |
-| Not a supplier in the vendor master (`vendor_unknown`) | The sender is not in the vendor master. It cannot be approved. | If the name was misread, correct it. Otherwise reject: a new supplier is set up through your vendor process first. |
+| Not a supplier in the vendor master (`vendor_unknown`) | The sender is not in the vendor master. It cannot be approved, and correcting the name does not change that: the check also runs on the name as first read. | Reject it. A new supplier is set up through your vendor process first; then the invoice is sent again. |
 | Same invoice already in the system (`duplicate_invoice`) | The same supplier and the same invoice number, printed the same way (only capitals, spaces and punctuation may differ, as in `INV-A-1001` and `inv a/1001`). The finding links to the other copy. It is also used when the number only looks alike (`INV-A-01001` and `INV-A-1001`) but the other copy is already approved or exported with the same total. | If the other copy is already approved or exported, this one cannot be approved: reject it. If both are waiting, approve at most one. |
 | Possibly the same invoice (`possible_duplicate`), must be ticked | The same supplier and a number that is the same once zeros and look-alike letters are set aside (`INV-2026-0001` and `INV-2026-001`, or `INV-11` and `INV-L1`); or the same supplier and total as another invoice within about ten days, under a different number. | Open the other document from the link and compare the two. Approve only if they are really different invoices, and say how you know. |
 | Possibly the same invoice (`possible_duplicate`), as a warning | The same supplier and total as an earlier invoice, more than about ten days apart. | Usually a regular invoice for the same amount (rent, a subscription). Check it is not an old invoice sent again. |
@@ -255,7 +255,9 @@ If you had ticked them already, a finding changed since: check it again.
 
 **"This document has errors that must be fixed first."**
 Correct the value if it was misread. If it cannot be fixed (unknown supplier, changed bank
-details, a copy of an invoice already approved), reject it.
+details, a currency not accepted, a copy of an invoice already approved), reject it. These are
+checked on the values as first read from the PDF too, so changing a value does not lift them,
+and the document type read from the PDF cannot be changed at all.
 
 **"You typed in or changed values on this document, so another reviewer must approve it."**
 That is the four-eyes rule. Ask a colleague to approve it.
