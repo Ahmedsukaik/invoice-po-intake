@@ -100,7 +100,7 @@ def story(page: Page, url: str, shots: bool, pause: float = 1.0) -> None:
     click(page, "Next: export and audit trail")
     wait(1600)
     page.locator("[data-export]").click()
-    title(page, "What you just did")
+    title(page, "bank change stopped")
     wait(3600)
     shot("demo-6-export.png")
 

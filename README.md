@@ -1,5 +1,16 @@
 # Invoice and PO Intake
 
+Supplier invoices read from the PDF, checked against the purchase order and the supplier's details on file, and approved by a person before anything reaches accounting. A reference build on fictional documents.
+
+**Try it:** https://invoice-po-intake-demo.vercel.app (two minutes, no sign-up; you are the reviewer).
+
+- Changed bank details cannot be approved by anyone.
+- An invoice over its PO is approved only after each finding is ticked, with a note that goes to the export.
+- Duplicates are caught even when the number is written differently.
+- Every value shows the line on the PDF it came from; every step is in the audit trail.
+
+Status: the demo layout is read with fixed rules. Other layouts need the Claude reader, tested against a simulated API and not yet run live. Scans are typed in by a person. 356 tests pass.
+
 ![The reviewer page: an invoice whose totals do not add up. The wrong line and totals are marked, and three findings must be ticked before it can be approved.](docs/img/reviewer-page.png)
 
 ## What it does in 30 seconds
@@ -37,8 +48,8 @@ but has not been run live. Scans are typed in by a person.
 
 ## Live demo
 
-A web demo of the same rules, for a quick look in a browser: six short steps on the demo
-PDFs, then free use. You are the reviewer. It runs on Vercel (`api/index.py`, `vercel.json`).
+A web demo of the same rules, for a quick look in a browser: six short steps on the sample
+invoices, then free use. You are the reviewer. Live at https://invoice-po-intake-demo.vercel.app (Vercel).
 
 ![The web demo: invoice 01 read and matched, approved with a stamp; new bank details locked; an invoice over its PO signed off finding by finding; an unknown layout; the export and the audit trail.](docs/img/demo-tour.gif)
 
@@ -46,24 +57,28 @@ PDFs, then free use. You are the reviewer. It runs on Vercel (`api/index.py`, `v
    the page at the line it was read from.
 2. **You approve it.** An APPROVED stamp lands on it, and the audit trail records it.
 3. **Invoice 04 asks to be paid to a new bank account.** Approve is locked for every reviewer,
-   the IBAN line is circled in red pen, and you reject it with a reason.
+   the IBAN line is marked in red pen (and shown, readable, in the review panel), and you
+   reject it with a reason.
 4. **Invoice 06 bills more than its PO allows.** You can approve it only after ticking both
    findings and writing why; the note travels with it to the export.
 5. **Invoice 10 is a layout the rules do not know.** With the AI reader on, Claude Haiku 5.5
-   reads it and quotes the line each value came from; without it, it goes to a person.
-6. **The export, the audit trail and the cost.** The CSV and JSON files are made in your
-   browser; a second export finds nothing.
+   reads it and quotes the line each value came from (tested against a simulated API; the
+   first live run follows deployment); without it, it is held for a person.
+6. **The export, the audit trail and the cost.** The product's exporter writes the CSV and
+   JSON in the throwaway copy; the page hands them to you as downloads, and nothing stays on
+   the server.
 
 After that, free use: all ten samples and two reviewers, Sara and Omar. Sample 05 is a copy of
-invoice 01, 08 is a scan that one reviewer types in and the other must approve (four eyes),
-and 09 charges more than the PO price.
+invoice 01, 08 is a scan that one reviewer types in and a second person must approve, and 09
+charges more than the PO price.
 
 What the demo says about itself, and holds to:
 
-- The demo PDFs are read with fixed rules that know one layout. Other layouts need the AI
-  reader. Without it, they go to a person.
+- Sample PDFs share one layout, read with fixed rules. Other layouts go to the AI reader or
+  to a person.
 - The date is fixed at 11 October 2026.
-- Export creates files in your browser.
+- The product's exporter writes the CSV and JSON in the throwaway copy; the page hands them to
+  you as downloads, and nothing stays on the server.
 - Every company and document is fictional, and there are no uploads: only the ten sample PDFs.
 
 | Step 1: read and matched | Step 3: Approve locked | Step 6: export and audit trail | Step 3 on a phone |
@@ -82,8 +97,9 @@ How it works:
   event and goes through the Claude reader's own checks again on every replay, so a stored
   answer is held to the same rules as a fresh one and costs nothing the second time.
 - **The AI reader** is the product's `ClaudeExtractor` with Claude Haiku 5.5 at effort low,
-  streamed, at most 8,000 output tokens, a 40 second timeout and no retries. Only sample 10
-  uses it. Limits: 5 AI readings per visitor per 10 minutes and 200 per server instance per
+  streamed, at most 8,000 output tokens and no retries. The whole answer may take 35 seconds
+  and the API may stay silent for 15 at most (Vercel stops a function at 60); past that the
+  file goes to a person. Only sample 10 uses it. Limits: 5 AI readings per visitor per 10 minutes and 200 per server instance per
   hour; the hard limit is the spend cap on the key. Over a limit, without a key, or when the
   key's spend limit is reached, sample 10 goes to a person and the page says why.
 - **The pages of each PDF** are PNG previews rendered once, at development time
@@ -96,20 +112,27 @@ Run it locally:
 
 ```bash
 pip install -r requirements-dev.txt
-python -m intake.demo_web            # then open http://127.0.0.1:8320
+python -m intake.demo_web --port 8320     # then open http://127.0.0.1:8320
 ```
 
 Without `ANTHROPIC_API_KEY` it runs on the rules reader alone, and sample 10 goes to a person.
 With a key in the environment it calls the live API for sample 10; `INTAKE_DEMO_AI=off`
 switches that off. Sessions are signed with `INTAKE_DEMO_SECRET` (32 characters or more); without
-it, a random secret is used for the process. On Vercel, set `ANTHROPIC_API_KEY` (a key with a
-spend cap) and `INTAKE_DEMO_SECRET` for Production. `python docs/make_media.py` records the
-tour and the screenshots above from a local copy.
+it, a random secret is used for the process. `python docs/make_media.py` records the tour and
+the screenshots above from a local copy. The browser tests and `make_media.py` need Playwright
+and an installed Chrome or Edge; without them the browser tests are skipped.
+
+Deploying on Vercel needs two settings in the project, for Production, then a redeploy:
+
+1. `ANTHROPIC_API_KEY`: a key with a spend cap. Without it the demo runs on the rules reader alone.
+2. `INTAKE_DEMO_SECRET`: 32 characters or more, for example from
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Without it the API does not start
+   on Vercel.
 
 | What was run | How | Result |
 |---|---|---|
-| Replay, signing, limits, the story over HTTP | `pytest tests/test_demo_session.py tests/test_demo_web.py` | 67 tests pass |
-| The story in a browser | `pytest tests/test_demo_ui.py`, Chrome at 1440x900, 1280x720, 390x844, 360x640 | 15 tests pass; at every step the button or finding it asks for is fully on screen |
+| Replay, signing, limits, hostile input, the story through the API (in-process test client) | `pytest tests/test_demo_session.py tests/test_demo_web.py` | 86 tests pass |
+| The story in a browser | `pytest tests/test_demo_ui.py`, Chrome at 1440x900, 1280x720, 390x844, 360x640, and a touch screen | 18 tests pass; at every step the button or finding it asks for is fully on screen |
 | The AI reader on sample 10 | simulated Anthropic API (the real SDK, a streamed answer) | every value read with its source line, matched to PO-2026-0105, one call, cost shown |
 | Spend limit, rate limit, overload, bad request | simulated API errors | sample 10 goes to a person; the page names the reason |
 | **Claude Haiku 5.5 live on sample 10** | the deployed demo with its key | **Not run yet: it runs once the demo is deployed with its key.** |
@@ -298,7 +321,7 @@ throwaway database and folders, and prints twelve short scenes:
 Options: `--pause` stops after each scene (useful when recording); `--serve` keeps the
 server running afterwards with one invoice waiting in "To review", and prints the sign-in
 tokens; `--keep` keeps the temporary folder with the database and the export files. The
-test suite has 328 test cases (82 of them for the web demo, 15 of those in a real browser).
+test suite has 356 test cases (104 of them for the web demo, 18 of those in a real browser).
 `python -m ruff check .` checks the code style.
 
 ## Running the pieces yourself
@@ -544,7 +567,7 @@ docs/USER_GUIDE.md     for the clerks and reviewers who use it
 docs/img/              screenshots and recordings of the reviewer page and of the web demo
 docs/make_media.py     records the web demo's tour and screenshots
 requirements-dev.txt   requirements.txt plus pytest, fpdf2, ruff, pypdfium2 and Playwright
-tests/                 328 test cases; 47 start the server and use real HTTP, 15 drive Chrome
+tests/                 356 test cases; 47 start the server and use real HTTP, 18 drive Chrome
 ```
 
 ## What the tests cover, and what they do not
