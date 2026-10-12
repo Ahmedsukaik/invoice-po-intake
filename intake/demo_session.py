@@ -128,7 +128,7 @@ def _typed(fields: dict[str, str], lines: list[tuple[str, str, str, str, str]]) 
 SAMPLES: dict[str, Sample] = {s.key: s for s in (
     Sample("01", "01_clean_invoice.pdf", "Clean invoice", "Acme, matches PO-2026-0101"),
     Sample("02", "02_totals_do_not_add_up.pdf", "Totals do not add up", "Brightline, a line and the totals are wrong"),
-    Sample("03", "03_unknown_vendor.pdf", "Unknown supplier", "Zenith, not in the vendor master, no PO"),
+    Sample("03", "03_unknown_vendor.pdf", "Unknown supplier", "Zenith, not on file, no PO"),
     Sample("04", "04_changed_bank_details.pdf", "New bank details", "Cobalt asks to be paid to a new account"),
     Sample("05", "05_duplicate_invoice.pdf", "Duplicate of invoice 01", "Acme sends INV-A-1001 again as a reminder"),
     Sample("06", "06_exceeds_po.pdf", "More than was ordered", "Acme bills 140 plates on a PO for 100"),
@@ -432,7 +432,7 @@ class Replay:
                     _text(event.get("note"), MAX_NOTE), _version(event))
             return {"ok": True, "doc": doc["id"], "message": "Saved."}
         except ActionRefused as exc:  # the product said no; it wrote that to the audit log, as it would for anyone
-            return {"ok": False, "doc": doc["id"], "message": exc.message, "findings": [f["id"] for f in exc.findings]}
+            return {"ok": False, "doc": doc["id"], "message": plain(exc.message), "findings": [f["id"] for f in exc.findings]}
 
     def _add(self, event: dict[str, Any]) -> dict[str, Any]:
         sha = _sha(event.get("sha256"))
@@ -669,6 +669,50 @@ def clear_stale_folders(max_age: float = STALE_AFTER) -> int:
 
 
 # ---------------------------------------------------------------------------- what the page shows
+# The product speaks to accounts payable staff ("vendor master", "2-way match"). The demo page
+# speaks to anyone: the same findings, the same ids, in plainer words.
+PLAIN = [
+    ("Bank details differ from the vendor master", "Bank details differ from those on file"),
+    ("Not a supplier in the vendor master", "Not a supplier on file"),
+    ("is not in the vendor master", "is not on file"),
+    ("the vendor master's ends", "the one on file ends"),
+    ("compared with the vendor master", "compared with those on file"),
+    ("match the vendor master", "match those on file"),
+    ("Payment uses the vendor master.", "Payment uses the details on file."),
+    ("with the vendor master", "with the details on file"),
+    ("from the vendor master", "on file"),
+    ("in the vendor master", "on file"),
+    ("the vendor master", "the supplier's file"),
+    ("Goods receipts are not checked (2-way match).", "Checked against the PO only."),
+    ("(four-eyes rule)", "(a second person must approve)"),
+    ("It needs OCR or manual entry.", "A person types it in."),
+]
+NO_MASTER = re.compile(r"The vendor master has no (.+?) for ")
+DOC_ID = re.compile(r"\bdoc_(\d{2})\b")
+
+
+def plain(text: str | None) -> str | None:
+    """Visitor wording for a product message: no internal ids, no accounts payable jargon."""
+    if not text:
+        return text
+    text = NO_MASTER.sub(r"There is no \1 on file for ", text)
+    for old, new in PLAIN:
+        text = text.replace(old, new)
+    return DOC_ID.sub(lambda m: f"{'purchase order' if m.group(1) == '07' else 'invoice'} {m.group(1)}", text)
+
+
+def _plain_finding(f: dict[str, Any], vendor: str | None) -> dict[str, Any]:
+    """The same finding (same id, so a tick still names it) with a plain message."""
+    message = f["message"]
+    if f["code"] == "bank_changed" and vendor:
+        first = message.startswith("As first read from the PDF: ")
+        what = "IBAN" if "the IBAN" in message else "bank account"
+        short = vendor.split()[0]
+        message = (f"{'As first read from the PDF: ' if first else ''}The {what} on this invoice is not the one on file "
+                   f"for {short}. Call {short} on the number on file, not the one on the invoice.")
+    return {**f, "message": plain(message), "label": plain(f["label"])}
+
+
 SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$"}
 STATUS_LABELS = {"needs_review": "To review", "needs_manual_entry": "Needs typing in", "approved": "Approved",
                  "rejected": "Rejected", "exporting": "Exporting", "exported": "Exported"}
@@ -736,6 +780,7 @@ def _document(r: Replay, doc: dict) -> dict[str, Any]:
     lines = [{**{k: line.get(k) for k in LINE_FIELDS},
               "shown": {k: _shown(LINE_FIELDS[k].kind, line.get(k), currency) for k in LINE_FIELDS},
               "source": line_sources[i] if i < len(line_sources) else None} for i, line in enumerate(doc["lines"])]
+    findings = [_plain_finding(x, f.get("vendor_name")) for x in findings]
     errors = [x for x in findings if x["severity"] == "error"]
     blocking = [x for x in findings if x["severity"] == "blocking"]
     corrections = r.store.corrections(doc["id"])
@@ -760,7 +805,7 @@ def _document(r: Replay, doc: dict) -> dict[str, Any]:
         else STATUS_LABELS.get(doc["status"], doc["status"]),
         "version": doc["version"], "doc_type": doc_type, "number": number, "vendor": f.get("vendor_name"),
         "total": _shown("amount", f.get("total"), currency), "po_number": f.get("po_number"),
-        "reader": doc["extractor"], "manual_reason": doc.get("manual_reason"), "waiting": waiting,
+        "reader": doc["extractor"], "manual_reason": plain(doc.get("manual_reason")), "waiting": waiting,
         "fields": fields, "lines": lines, "findings": findings,
         "summary": summary(findings),
         "errors": len(errors), "blocking": [x["id"] for x in blocking],
@@ -778,6 +823,10 @@ def _document(r: Replay, doc: dict) -> dict[str, Any]:
     }
 
 
+def _count(n: Any, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
 def _audit_entry(row: dict) -> tuple[str, str]:
     """(who, what they did) in plain words, from one row of the product's audit log."""
     try:
@@ -793,7 +842,7 @@ def _audit_entry(row: dict) -> tuple[str, str]:
         who = {"rules": "Rules reader", "none": "Reader"}.get(reader, f"AI reader, Claude {model}")
         if outcome == "manual":
             return who, f"Could not read it, so it goes to a person: {d.get('problem')}"
-        read = f"Read {len(d.get('fields_read') or [])} values and {d.get('lines', 0)} lines"
+        read = f"Read {_count(len(d.get('fields_read') or []), 'value')} and {_count(d.get('lines', 0), 'line')}"
         if d.get("input_tokens") is not None:
             read += f" ({d['input_tokens']:,} tokens in, {d.get('output_tokens') or 0:,} out)"
         return who, read + "."
@@ -835,6 +884,7 @@ def view(r: Replay) -> dict[str, Any]:
     audit = []
     for row in r.store.audit_entries(300):
         who, what = _audit_entry(row)
+        what = plain(what) or ""
         audit.append({"time": _clock(row["ts"]), "actor": row["actor"], "role": row["role"], "action": row["action"],
                       "outcome": row["outcome"], "doc": row["document_id"], "doc_label": labels.get(row["document_id"] or ""),
                       "who": who, "text": what})

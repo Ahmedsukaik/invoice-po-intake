@@ -113,7 +113,7 @@ def test_the_six_step_story():
     assert v.doc("01")["stamp"] == "approved" and v.doc("01")["decided"]["by"] == "Sara"
     locked = v.add("04")                                                   # 3: new bank account
     assert locked["stamp"] == "locked" and locked["hard_lock"] and locked["locked"] == [
-        "Bank details differ from the vendor master"]
+        "Bank details differ from those on file"]  # the product's finding, in the demo's plain words
     refused = v.approve("04")
     assert refused["ok"] is False and "cannot be approved" in refused["message"]
     assert v.doc("04")["status"] == "needs_review"
@@ -154,7 +154,7 @@ def test_four_eyes_with_two_reviewers():
     assert typed["four_eyes"] == ["sara"] and typed["status_label"] == "Typed in, waiting"
     assert ("bank_typed", "blocking") in v.codes("08") and typed["errors"] == 0
     own = v.approve("08", by="sara", ack=typed["blocking"], note="Checked against the scan.")
-    assert own["ok"] is False and "four-eyes" in own["message"]
+    assert own["ok"] is False and "a second person must approve" in own["message"]
     assert not v.approve("08", by="omar")["ok"]  # the bank details typed in by a person must be ticked
     assert v.approve("08", by="omar", ack=typed["blocking"], note="Compared the IBAN with the vendor master.")["ok"]
     assert v.doc("08")["decided"]["by"] == "Omar"
@@ -459,3 +459,22 @@ def test_stale_temporary_folders_are_cleared_at_start_up():
         assert not old.exists() and fresh.exists()
     finally:
         fresh.rmdir()
+
+
+def test_the_page_gets_plain_words_and_ticks_still_name_the_product_findings():
+    v = Visitor()
+    v.add("01")
+    v.approve("01")
+    copy = v.add("05")
+    duplicate = next(f for f in copy["findings"] if f["code"] == "duplicate_invoice")
+    assert "invoice 01" in duplicate["message"] and "doc_01" not in duplicate["message"]
+    bank = v.add("04")
+    message = next(f for f in bank["findings"] if f["code"] == "bank_changed")
+    assert message["message"] == ("The IBAN on this invoice is not the one on file for Cobalt. Call Cobalt on the number "
+                                  "on file, not the one on the invoice.")
+    over = v.add("06")  # ticks use the ids the page shows: the product's own fingerprints, unchanged
+    assert v.approve("06", ack=over["blocking"], note="Agreed with the buyer by phone.")["ok"]
+    for d in v.view["documents"]:
+        for f in d["findings"]:
+            assert "vendor master" not in f["message"] and "2-way" not in f["message"] and "doc_" not in f["message"]
+    assert all("vendor master" not in a["text"] and "doc_" not in a["text"] for a in v.view["audit"])
