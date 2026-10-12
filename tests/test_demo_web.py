@@ -215,7 +215,8 @@ def test_every_sample_has_a_preview_whose_lines_match_the_text_layer():
         preview = previews[sample.file]
         assert (PUBLIC / preview["png"]).is_file()
         text = read_text(sample.path.read_bytes()).pages[0]
-        expected = [line.strip() for line in text.split("\n") if line.strip()]
+        expected = [line.strip() for line in text.split("\n") if line.strip()
+                    and not line.startswith("Demo document generated")]  # the fine-print footer is cropped off
         assert [line["text"] for line in preview["lines"]] == expected, sample.file
         assert all(0 <= x <= 1 for line in preview["lines"] for x in line["box"])
 
