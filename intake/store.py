@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS documents (
     vendor_key TEXT,
     po_ref TEXT,
     total_cents INTEGER,
+    first_number_key TEXT,
+    first_vendor_key TEXT,
+    first_total_cents INTEGER,
     fields TEXT NOT NULL,
     original_fields TEXT NOT NULL,
     evidence TEXT NOT NULL,
@@ -74,6 +77,8 @@ CREATE INDEX IF NOT EXISTS idx_doc_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_doc_number ON documents(doc_type, number_key);
 CREATE INDEX IF NOT EXISTS idx_doc_po ON documents(po_ref);
 CREATE INDEX IF NOT EXISTS idx_doc_total ON documents(doc_type, total_cents);
+CREATE INDEX IF NOT EXISTS idx_doc_first_number ON documents(doc_type, first_number_key);
+CREATE INDEX IF NOT EXISTS idx_doc_first_total ON documents(doc_type, first_total_cents);
 CREATE TABLE IF NOT EXISTS corrections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     document_id TEXT NOT NULL,
@@ -140,7 +145,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 # PRAGMA user_version of a database made by this code. Opening an older database adds the
 # columns it lacks and recomputes the lookup keys; a newer one is refused (see Store._prepare).
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # Columns that are NOT NULL without a default in SCHEMA, and the value an upgrade gives existing rows.
 UPGRADE_DEFAULTS = {("purchase_orders", "source"): "'erp'"}
 
@@ -185,6 +190,14 @@ def _shrink(value: Any, depth: int = 0) -> Any:
 def cents(amount: object) -> int | None:
     value = dec(amount)
     return int((value * 100).to_integral_value()) if value is not None else None
+
+
+def first_keys(fields: dict[str, Any]) -> tuple[str | None, str | None, int | None]:
+    """(number_key, vendor_key, total_cents) of the values as first read from the PDF. Kept beside
+    the current ones, so a document whose number or total a person changed is still found as it
+    arrived: changing the first copy of an invoice must not let the second one through."""
+    _, number, vendor, _, total = derived(fields)
+    return number, vendor, total
 
 
 def derived(fields: dict[str, Any]) -> tuple[str | None, str | None, str | None, str | None, int | None]:
@@ -249,11 +262,12 @@ class Store:
             conn.execute("ROLLBACK")
             raise
         conn.executescript(SCHEMA)  # new tables and indexes
-        with_keys = conn.execute("SELECT id, fields FROM documents").fetchall()
+        with_keys = conn.execute("SELECT id, fields, original_fields FROM documents").fetchall()
         conn.execute("BEGIN IMMEDIATE")
         for row in with_keys:
-            conn.execute("UPDATE documents SET doc_type = ?, number_key = ?, vendor_key = ?, po_ref = ?, "
-                         "total_cents = ? WHERE id = ?", (*derived(json.loads(row["fields"])), row["id"]))
+            conn.execute("UPDATE documents SET doc_type = ?, number_key = ?, vendor_key = ?, po_ref = ?, total_cents = ?, "
+                         "first_number_key = ?, first_vendor_key = ?, first_total_cents = ? WHERE id = ?",
+                         (*derived(json.loads(row["fields"])), *first_keys(json.loads(row["original_fields"])), row["id"]))
         conn.execute("COMMIT")
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self._audit_upgrade(conn, version, len(with_keys))
@@ -387,10 +401,10 @@ class Store:
             try:
                 conn.execute(
                     "INSERT INTO documents (id, sha256, filename, size, source, status, doc_type, number_key, vendor_key, "
-                    "po_ref, total_cents, fields, original_fields, evidence, lines, original_lines, reader_notes, "
-                    "extractor, page_count, text_layer, manual_reason, uploaded_by, uploaded_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (doc_id, sha256, filename, size, source, status, doc_type, nkey, vkey, po_ref, total,
+                    "po_ref, total_cents, first_number_key, first_vendor_key, first_total_cents, fields, original_fields, "
+                    "evidence, lines, original_lines, reader_notes, extractor, page_count, text_layer, manual_reason, "
+                    "uploaded_by, uploaded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (doc_id, sha256, filename, size, source, status, doc_type, nkey, vkey, po_ref, total, nkey, vkey, total,
                      json.dumps(fields), json.dumps(fields), json.dumps(evidence), json.dumps(lines),
                      json.dumps(lines), json.dumps(notes), extractor, page_count, text_layer, manual_reason,
                      uploaded_by, self.now()),
@@ -411,10 +425,11 @@ class Store:
         with self._tx() as conn:
             cur = conn.execute(
                 "UPDATE documents SET status = ?, doc_type = ?, number_key = ?, vendor_key = ?, po_ref = ?, "
-                "total_cents = ?, fields = ?, original_fields = ?, evidence = ?, lines = ?, original_lines = ?, "
+                "total_cents = ?, first_number_key = ?, first_vendor_key = ?, first_total_cents = ?, fields = ?, "
+                "original_fields = ?, evidence = ?, lines = ?, original_lines = ?, "
                 "reader_notes = ?, extractor = ?, manual_reason = ?, version = version + 1 "
                 f"WHERE id = ? AND version = ? AND corrected = '[]' AND status IN ({marks})",
-                (status, doc_type, nkey, vkey, po_ref, total, json.dumps(fields), json.dumps(fields),
+                (status, doc_type, nkey, vkey, po_ref, total, nkey, vkey, total, json.dumps(fields), json.dumps(fields),
                  json.dumps(evidence), json.dumps(lines), json.dumps(lines), json.dumps(notes), extractor,
                  manual_reason, doc_id, expected_version, *REVIEWABLE),
             )
@@ -461,26 +476,28 @@ class Store:
         return out
 
     def same_number(self, doc_type: str, number: str | None, exclude_id: str) -> list[dict]:
-        """Other documents of this type with the same number (see number_key), except rejected ones."""
+        """Other documents of this type with the same number (see number_key), now or as first read
+        from their PDF, except rejected ones."""
         key = number_key(number)
         if not key:
             return []
         with self._conn() as conn:
             rows = conn.execute(
-                f"SELECT {LIGHT} FROM documents WHERE doc_type = ? AND number_key = ? AND id != ? "
-                "AND status != 'rejected'", (doc_type, key, exclude_id)).fetchall()
+                f"SELECT {LIGHT} FROM documents WHERE doc_type = ? AND (number_key = ? OR first_number_key = ?) "
+                "AND id != ? AND status != 'rejected'", (doc_type, key, key, exclude_id)).fetchall()
         return [self._doc(r) for r in rows]
 
     def invoices_near_total(self, total: str | None, tolerance: Decimal, exclude_id: str) -> list[dict]:
-        """Other invoices, not rejected, whose total is within the tolerance of this one."""
+        """Other invoices, not rejected, whose total (now, or as first read) is within the tolerance of this one."""
         center = cents(total)
         if center is None:
             return []
         spread = cents(tolerance) or 0
         with self._conn() as conn:
             rows = conn.execute(
-                f"SELECT {LIGHT} FROM documents WHERE doc_type = 'invoice' AND total_cents BETWEEN ? AND ? "
-                "AND id != ? AND status != 'rejected'", (center - spread, center + spread, exclude_id)).fetchall()
+                f"SELECT {LIGHT} FROM documents WHERE doc_type = 'invoice' AND (total_cents BETWEEN ? AND ? "
+                "OR first_total_cents BETWEEN ? AND ?) AND id != ? AND status != 'rejected'",
+                (center - spread, center + spread, center - spread, center + spread, exclude_id)).fetchall()
         return [self._doc(r) for r in rows]
 
     def invoices_for_po(self, po_number: str, exclude_id: str) -> list[dict]:
@@ -496,12 +513,18 @@ class Store:
         """Documents still waiting for review whose findings may change because of this one:
         same number, same PO, or the same total."""
         doc_type, nkey, _, po_ref, total = derived(doc["fields"])
+        first_nkey, _, first_total = first_keys(doc.get("original_fields") or {})
         marks = ",".join("?" * len(REVIEWABLE))
+        keys = [k for k in {nkey, first_nkey} if k] or [""]
+        key_marks = ",".join("?" * len(keys))
+        totals = [t for t in {total, first_total} if t is not None] or [-10]
+        near = " OR ".join(["(total_cents BETWEEN ? AND ?) OR (first_total_cents BETWEEN ? AND ?)"] * len(totals))
+        spans = [x for t in totals for x in (t - 2, t + 2, t - 2, t + 2)]
         with self._conn() as conn:
             rows = conn.execute(
                 f"SELECT {LIGHT} FROM documents WHERE id != ? AND status IN ({marks}) AND "
-                "((number_key = ? AND doc_type = ?) OR po_ref = ? OR (total_cents BETWEEN ? AND ?))",
-                (doc["id"], *REVIEWABLE, nkey, doc_type, po_ref, (total or -10) - 2, (total or -10) + 2)).fetchall()
+                f"(((number_key IN ({key_marks}) OR first_number_key IN ({key_marks})) AND doc_type = ?) OR po_ref = ? "
+                f"OR {near})", (doc["id"], *REVIEWABLE, *keys, *keys, doc_type, po_ref, *spans)).fetchall()
         return [self._doc(r) for r in rows]
 
     def save_findings(self, doc_id: str, findings: list[dict], version: int) -> bool:

@@ -233,6 +233,10 @@ What the code enforces:
    the same total: then it is an error too. The same vendor and total under another
    number is blocking within `DUPLICATE_WINDOW_DAYS` (10), and a warning naming the
    nearest one when further apart, since regular invoices for one amount are normal.
+   Each document's number, vendor and total as first read from its PDF are kept beside the
+   current ones, and copies are matched on both: changing the number, date or PO of the
+   first copy does not let the second through, and once that first copy is approved or
+   exported the second is an error that no correction lifts.
    Invoiced quantities and amounts are counted against the PO, including earlier approved
    invoices. Exports run one at a time, and a document is never exported twice.
 8. **The PO register belongs to the ERP.** Invoices are matched against purchase orders

@@ -478,3 +478,24 @@ def test_the_page_gets_plain_words_and_ticks_still_name_the_product_findings():
         for f in d["findings"]:
             assert "vendor master" not in f["message"] and "2-way" not in f["message"] and "doc_" not in f["message"]
     assert all("vendor master" not in a["text"] and "doc_" not in a["text"] for a in v.view["audit"])
+
+
+def test_renumbering_the_first_copy_cannot_get_both_copies_exported():
+    """The second review's probe: Sara changes 01's number, date and PO; Omar approves 01 with every
+    finding ticked; 05, the same invoice, must stay locked, and only one copy is exported."""
+    v = Visitor()
+    v.add("01")
+    v.add("05")
+    first = v.doc("01")
+    assert v.do({"type": "correct", "doc": "doc_01", "by": "sara", "fields": {
+        "invoice_number": "INV-A-1001-R", "invoice_date": "2026-09-01", "due_date": "2026-10-01",
+        "po_number": "PO-2026-0104"}, "lines": None, "note": "x", "version": first["version"]})["ok"]
+    assert v.approve("01", by="omar", ack=v.doc("01")["blocking"], note="Checked with the supplier by phone.")["ok"]
+    copy = v.doc("05")
+    assert copy["stamp"] == "locked" and ("duplicate_invoice", "error") in v.codes("05")
+    assert not v.approve("05", by="sara", ack=copy["blocking"], note="Checked with the supplier by phone.")["ok"]
+    assert not v.approve("05", by="omar")["ok"]
+    v.do({"type": "export"})
+    [batch] = v.view["exports"]
+    rows = list(csv.DictReader(io.StringIO(next(f for f in batch["files"] if f["name"] == "invoices.csv")["content"])))
+    assert [r["invoice_number"] for r in rows] == ["INV-A-1001-R"]

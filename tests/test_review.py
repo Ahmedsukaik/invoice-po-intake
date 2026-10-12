@@ -403,3 +403,49 @@ def test_a_correction_that_fixes_a_misread_number_still_works(deps):
     doc = add(deps, "02_totals_do_not_add_up.pdf")
     fixed = review.correct(deps, doc["id"], SARA, {"total": "984.00"})
     assert not [f for f in fixed["findings"] if f["severity"] == "error"]  # nothing permanent on the first reading
+
+
+# ------------------------------------------------------------------ changing the FIRST copy of an invoice
+MOVED = {"invoice_number": "INV-A-1001-R", "invoice_date": "2026-09-01", "due_date": "2026-10-01", "po_number": "PO-2026-0104"}
+
+
+def approve_all(deps, doc_id, who):
+    doc = review.recheck(deps, doc_id, who)
+    return review.approve(deps, doc_id, who, ack(doc), "Checked every finding with the buyer.", seen_version=doc["version"])
+
+
+@pytest.mark.parametrize("changes", [MOVED, {"invoice_number": "INV-A-1001-R"}], ids=["number date and PO", "number only"])
+def test_changing_the_first_copy_does_not_let_the_second_copy_through(deps, changes):
+    """01 and 05 are the same invoice. Renumbering 01 before approving it used to leave 05 with only
+    a warning, so both were approved and exported: the same invoice paid twice."""
+    first, copy = add(deps, "01_clean_invoice.pdf"), add(deps, "05_duplicate_invoice.pdf")
+    review.correct(deps, first["id"], SARA, changes, seen_version=first["version"])
+    assert approve_all(deps, first["id"], OMAR)["status"] == "approved"
+    copy = review.recheck(deps, copy["id"], SARA)
+    dup = [f for f in copy["findings"] if f["code"] == "duplicate_invoice"]
+    assert dup and dup[0]["severity"] == "error" and "As first read from its PDF" in dup[0]["message"]
+    with pytest.raises(ActionRefused):
+        review.approve(deps, copy["id"], SARA, ack(copy), "It looks like a different invoice now.")
+    renamed = review.correct(deps, copy["id"], SARA, {"invoice_number": "INV-A-1001-S"})  # and no correction lifts it
+    assert ("duplicate_invoice", "error") in [(f["code"], f["severity"]) for f in renamed["findings"]]
+    assert deps.store.get(copy["id"])["status"] == "needs_review"
+
+
+def test_changing_the_first_copy_and_approving_the_second_first_is_caught_too(deps):
+    first, copy = add(deps, "01_clean_invoice.pdf"), add(deps, "05_duplicate_invoice.pdf")
+    review.correct(deps, first["id"], SARA, MOVED, seen_version=first["version"])
+    waiting = review.recheck(deps, copy["id"], OMAR)
+    assert ("duplicate_invoice", "blocking") in [(f["code"], f["severity"]) for f in waiting["findings"]]
+    assert approve_all(deps, copy["id"], OMAR)["status"] == "approved"  # a person ticked it: one copy may go
+    with pytest.raises(ActionRefused) as refused:
+        approve_all(deps, first["id"], OMAR)
+    assert "duplicate_invoice" in codes(refused.value.findings)
+
+
+def test_changing_the_second_copy_then_approving_the_first_is_caught(deps):
+    first, copy = add(deps, "01_clean_invoice.pdf"), add(deps, "05_duplicate_invoice.pdf")
+    review.correct(deps, copy["id"], SARA, {"invoice_number": "INV-A-1001-R"}, seen_version=copy["version"])
+    assert review.approve(deps, first["id"], OMAR, ack(review.recheck(deps, first["id"], OMAR)),
+                          "The original invoice.")["status"] == "approved"
+    copy = review.recheck(deps, copy["id"], OMAR)
+    assert ("duplicate_invoice", "error") in [(f["code"], f["severity"]) for f in copy["findings"]]

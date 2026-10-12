@@ -35,6 +35,7 @@ from .values import (
     iban_is_valid,
     money,
     name_key,
+    number_key,
     parse_date,
     uk_details_from_iban,
 )
@@ -367,6 +368,16 @@ def _bank_checks(fields: dict, corrected: set[str], original: dict, vendor: dict
             "then this document is re-checked.", "vendor_iban" if iban else "vendor_sort_code")
 
 
+def _now_and_as_read(other: dict) -> list[tuple[dict, bool]]:
+    """Another document's values now and, when a person changed them, as first read from its PDF.
+    A duplicate is looked for in both, so changing the first copy cannot let the second through."""
+    out = [(other["fields"], False)]
+    first = other.get("original_fields") or {}
+    if other.get("corrected") and first.get("doc_type") and first != other["fields"]:
+        out.append((first, True))
+    return out
+
+
 def _duplicate_checks(doc: dict, fields: dict, vendors: list[dict], lookups: Lookups, policy: Policy, add: Any) -> None:
     """Same vendor and the same invoice number: an error when the other copy is already approved
     or exported and either the number is printed the same way or the total is the same too;
@@ -378,18 +389,37 @@ def _duplicate_checks(doc: dict, fields: dict, vendors: list[dict], lookups: Loo
     me = vendor_identity(fields.get("vendor_name"), vendors)
     flagged: set[str] = set()
     for other in lookups.same_number("invoice", number, doc["id"]):
-        if vendor_identity(other["fields"].get("vendor_name"), vendors) != me:
+        match = next(((values, as_read) for values, as_read in _now_and_as_read(other)
+                      if number_key(values.get("invoice_number")) == number_key(number)
+                      and vendor_identity(values.get("vendor_name"), vendors) == me), None)
+        if match is None:
             continue
+        values, as_read = match
         flagged.add(other["id"])
-        printed = other["fields"].get("invoice_number")
-        mine, theirs = dec(fields.get("total")), dec(other["fields"].get("total"))
+        printed = values.get("invoice_number")
+        mine, theirs = dec(fields.get("total")), dec(values.get("total"))
         same_total = mine is not None and theirs is not None and abs(mine - theirs) <= policy.amount_tolerance
-        if exact_number_key(printed) != exact_number_key(number) and other["status"] in COMMITTED and same_total:
+        exact = exact_number_key(printed) == exact_number_key(number)
+        if as_read:
+            # The other copy's number was changed after it was read. Already approved or exported: the
+            # same invoice paid again, unless the numbers only look alike and the totals differ.
+            if other["status"] in COMMITTED and (exact or same_total):
+                add("duplicate_invoice", "error",
+                    f"{other['id']} (file {other['filename']}) from this vendor is already {other['status']}. As first "
+                    f"read from its PDF its invoice number was {printed}, which reads the same as {number}, and a "
+                    "person changed it later. This copy cannot be approved; reject it.", "invoice_number", other["id"])
+            else:
+                add("duplicate_invoice", "blocking",
+                    f"{other['id']} ({other['status']}, file {other['filename']}) from this vendor had invoice number "
+                    f"{printed} as first read from its PDF, which reads the same as {number}, and a person changed it "
+                    "later. Check they are not the same invoice; approve at most one.", "invoice_number", other["id"])
+            continue
+        if not exact and other["status"] in COMMITTED and same_total:
             add("duplicate_invoice", "error",
                 f"{other['id']} (file {other['filename']}) from this vendor is already {other['status']} with "
                 f"invoice number {printed}, which reads the same as {number}, and the same total {money(mine)}. "
                 "This copy cannot be approved; reject it.", "invoice_number", other["id"])
-        elif exact_number_key(printed) != exact_number_key(number):
+        elif not exact:
             add("possible_duplicate", "blocking",
                 f"{other['id']} ({other['status']}, file {other['filename']}) from this vendor has invoice number "
                 f"{printed}, which reads the same as {number} once spaces, punctuation, leading zeros and the "
@@ -406,25 +436,38 @@ def _duplicate_checks(doc: dict, fields: dict, vendors: list[dict], lookups: Loo
     this_day = parse_date(fields.get("invoice_date"))
     window = timedelta(days=policy.duplicate_window_days)
     total_text = money(dec(fields.get("total")) or Decimal("0"))
-    nearest: tuple[int, dict] | None = None
+    nearest: tuple[int, dict, dict, str] | None = None
+    mine = dec(fields.get("total"))
     for other in lookups.invoices_near_total(fields.get("total"), policy.amount_tolerance, doc["id"]):
-        if other["id"] in flagged or vendor_identity(other["fields"].get("vendor_name"), vendors) != me:
+        if other["id"] in flagged:
             continue
-        other_day = parse_date(other["fields"].get("invoice_date"))
-        if this_day and other_day and abs(this_day - other_day) > window:
-            gap = abs(this_day - other_day).days
+        versions = [(values, as_read) for values, as_read in _now_and_as_read(other)
+                    if vendor_identity(values.get("vendor_name"), vendors) == me and mine is not None
+                    and (theirs := dec(values.get("total"))) is not None and abs(mine - theirs) <= policy.amount_tolerance]
+        if not versions:
+            continue
+
+        def apart(values: dict) -> int | None:
+            other_day = parse_date(values.get("invoice_date"))
+            return abs(this_day - other_day).days if this_day and other_day else None
+
+        # A date moved by a person must not hide a copy: the closest of its two versions counts.
+        values, as_read = min(versions, key=lambda v: -1 if apart(v[0]) is None else apart(v[0]))
+        read = " as first read from its PDF" if as_read else ""
+        gap = apart(values)
+        if gap is not None and gap > window.days:
             if nearest is None or gap < nearest[0]:
-                nearest = (gap, other)
+                nearest = (gap, other, values, read)
             continue
         add("possible_duplicate", "blocking",
             f"{other['id']} ({other['status']}) has the same vendor and total {total_text} within "
-            f"{policy.duplicate_window_days} days, under number {other['fields'].get('invoice_number')}. Check it is "
+            f"{policy.duplicate_window_days} days{read}, under number {values.get('invoice_number')}. Check it is "
             "not the same invoice.", "invoice_number", other["id"])
     if nearest:
-        gap, other = nearest
+        gap, other, values, read = nearest
         add("possible_duplicate", "warning",
-            f"{other['id']} ({other['status']}) has the same vendor and total {total_text}, {gap} days apart, under "
-            f"number {other['fields'].get('invoice_number')}. Regular invoices for one amount are normal; check this "
+            f"{other['id']} ({other['status']}) has the same vendor and total {total_text}, {gap} days apart{read}, "
+            f"under number {values.get('invoice_number')}. Regular invoices for one amount are normal; check this "
             "is not an old invoice sent again.", "invoice_number", other["id"])
 
 
