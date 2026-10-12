@@ -80,8 +80,11 @@ MODEL_ID = re.compile(r"claude-[a-z0-9.-]{1,60}")
 # from Anthropic's pricing page (October 2026), for the cost the page shows.
 MODEL = "claude-haiku-5-5"
 AI_MAX_TOKENS = 8000
-AI_TIMEOUT = 40.0
+AI_DEADLINE = 35.0        # seconds for the whole answer; past it the file goes to a person (Vercel stops at 60)
+AI_SILENCE = 15.0         # seconds the API may stay silent between two parts of the answer
 PRICES = {"claude-haiku-5-5": (0.10, 0.50)}
+MAX_SESSION_BYTES = 240_000  # a signed session larger than this is never handed out (the server reads 300 KB)
+STALE_AFTER = 600            # seconds after which a leftover temporary folder is removed at start-up
 
 CLERK = Identity("tom", "clerk")
 ADMIN = Identity("ana", "admin")
@@ -236,7 +239,7 @@ def make_reader(client: Any) -> ClaudeExtractor:
     """The product's Claude reader with the demo's settings, all given explicitly, so a shell's
     INTAKE_CLAUDE_* settings cannot change it."""
     return ClaudeExtractor(client=client, model=MODEL, effort="low", fallbacks="off", date_order="dmy",
-                           max_tokens=AI_MAX_TOKENS)
+                           max_tokens=AI_MAX_TOKENS, deadline=AI_DEADLINE)
 
 
 def live_reader_from_env() -> ClaudeExtractor | None:
@@ -249,7 +252,7 @@ def live_reader_from_env() -> ClaudeExtractor | None:
     try:
         import anthropic
 
-        return make_reader(anthropic.Anthropic(timeout=AI_TIMEOUT, max_retries=0))
+        return make_reader(anthropic.Anthropic(timeout=anthropic.Timeout(AI_SILENCE, connect=5.0), max_retries=0))
     except BaseException:  # SystemExit from a settings check included
         log.exception("the AI reader could not be set up; the demo runs on the rules reader")
         return None
@@ -290,8 +293,10 @@ def read_with_ai(reader: Any, data: bytes) -> tuple[dict[str, Any] | None, str]:
         return None, "failed"
     usage = {k: v for k in ("input_tokens", "output_tokens")
              if isinstance(v := info.get(k), int) and not isinstance(v, bool) and 0 <= v < 10_000_000}
-    model = str(info.get("model") or MODEL)
-    reading = {"answer": answer, "model": model if MODEL_ID.fullmatch(model) else MODEL, "usage": usage,
+    served = str(info.get("model") or "")
+    # Priced by the model asked for: the API may answer with a dated name the price list does not know.
+    reading = {"answer": answer, "model": str(getattr(reader, "model", MODEL)),
+               "served": served if MODEL_ID.fullmatch(served) else "", "usage": usage,
                "ms": int((time.monotonic() - started) * 1000)}
     if len(json.dumps(answer, ensure_ascii=True)) > MAX_READING:
         return None, "failed"
@@ -311,7 +316,7 @@ class _StoredReading:
     def extract(self, pdf_bytes: bytes, pages: list[str]) -> Extracted:
         out = _PARSER.parse(self.reading["answer"], pages)
         out.extractor = self.name
-        out.usage = {"model": self.reading["model"], "request_id": None, **self.reading["usage"]}
+        out.usage = {"model": self.reading["served"] or self.reading["model"], "request_id": None, **self.reading["usage"]}
         return out
 
 
@@ -406,7 +411,7 @@ class Replay:
             raise SessionError("unknown event")
         doc = self.doc_for(_sha(event.get("sha256")))
         by = event.get("by")
-        if by not in REVIEWERS:
+        if not isinstance(by, str) or by not in REVIEWERS:
             raise SessionError("unknown reviewer")
         who = REVIEWERS[by]
         try:
@@ -550,9 +555,11 @@ def _typed_lines(value: Any) -> list[dict[str, str | None]] | None:
 
 
 def _reading(raw: Any) -> dict[str, Any]:
-    if not isinstance(raw, dict) or set(raw) != {"answer", "model", "usage", "ms"}:
+    if not isinstance(raw, dict) or set(raw) != {"answer", "model", "served", "usage", "ms"}:
         raise SessionError("bad AI reading")
-    answer, model, usage, ms = raw["answer"], raw["model"], raw["usage"], raw["ms"]
+    answer, model, served, usage, ms = raw["answer"], raw["model"], raw["served"], raw["usage"], raw["ms"]
+    if not isinstance(served, str) or (served and not MODEL_ID.fullmatch(served)):
+        raise SessionError("bad model")
     if not isinstance(answer, dict) or len(json.dumps(answer, ensure_ascii=True)) > MAX_READING:
         raise SessionError("bad AI answer")
     if not isinstance(model, str) or not MODEL_ID.fullmatch(model):
@@ -562,7 +569,7 @@ def _reading(raw: Any) -> dict[str, Any]:
         raise SessionError("bad usage")
     if not isinstance(ms, int) or isinstance(ms, bool) or not 0 <= ms < 600_000:
         raise SessionError("bad timing")
-    return {"answer": answer, "model": model, "usage": dict(usage), "ms": ms}
+    return {"answer": answer, "model": model, "served": served, "usage": dict(usage), "ms": ms}
 
 
 # ---------------------------------------------------------------------------- new actions from the page
@@ -575,8 +582,11 @@ def new_event(r: Replay, action: dict[str, Any], *, reader: Any = None, want_ai:
     """Turn the page's action into an event, checking it first. May call the AI reader: ai_gate()
     is asked just before (the web server's limits); it returns None, or why not."""
     kind = action.get("type")
+    if not isinstance(kind, str):
+        raise ActionError("Unknown action.")
     if kind == "add":
-        sample = SAMPLES.get(str(action.get("sample") or ""))
+        key = action.get("sample")
+        sample = SAMPLES.get(key) if isinstance(key, str) else None
         if sample is None:
             raise ActionError("There is no such sample document.")
         sha = sample_sha(sample)
@@ -594,11 +604,12 @@ def new_event(r: Replay, action: dict[str, Any], *, reader: Any = None, want_ai:
         return {"type": "export"}
     if kind not in ("approve", "reject", "correct"):
         raise ActionError("Unknown action.")
-    doc = r.store.get(str(action.get("doc") or "")[:40])
+    doc_id = action.get("doc")
+    doc = r.store.get(doc_id) if isinstance(doc_id, str) and len(doc_id) <= 40 else None
     if doc is None:
         raise ActionError("That document is not in this demo yet.")
     by = action.get("by")
-    if by not in REVIEWERS:
+    if not isinstance(by, str) or by not in REVIEWERS:
         raise ActionError("Choose who is reviewing: Sara or Omar.")
     base = {"type": kind, "sha256": doc["sha256"], "by": by}
     try:
@@ -606,8 +617,9 @@ def new_event(r: Replay, action: dict[str, Any], *, reader: Any = None, want_ai:
             return {**base, "reason": _text(action.get("reason"), MAX_NOTE).strip()}
         version = _version(action)
         if kind == "approve":
-            ack = action.get("ack") or []
-            if not isinstance(ack, list) or not all(isinstance(a, str) and FINDING_ID.fullmatch(a) for a in ack):
+            ack = action.get("ack", [])
+            if not isinstance(ack, list) or len(ack) > 40 or not all(isinstance(a, str) and FINDING_ID.fullmatch(a)
+                                                                     for a in ack):
                 raise ActionError("Bad ticks.")
             return {**base, "ack": sorted(set(ack))[:40], "note": _text(action.get("note"), MAX_NOTE).strip(),
                     "version": version}
@@ -631,9 +643,29 @@ def handle(session: Any, action: Any, *, reader: Any = None, want_ai: bool = Tru
             if len(events) >= MAX_EVENTS:
                 raise ActionError("This demo has reached its limit of actions. Replay the demo to start again.")
             event = new_event(r, action, reader=reader, want_ai=want_ai, ai_gate=ai_gate)
+            if len(_canonical([*events, event])) > MAX_SESSION_BYTES:
+                raise ActionError("This demo session is full. Replay the demo to start again.")
             result = r.apply(event)
             events = [*events, event]
         return {"session": signed(events), "view": view(r), "result": result}
+
+
+def clear_stale_folders(max_age: float = STALE_AFTER) -> int:
+    """Remove temporary folders left by requests that were cut off (a function stopped mid-request,
+    say). Folders younger than max_age may belong to requests still running and are kept."""
+    removed, now = 0, time.time()
+    try:
+        entries = list(Path(tempfile.gettempdir()).iterdir())
+    except OSError:
+        return 0
+    for path in entries:
+        try:
+            if path.name.startswith(TMP_PREFIX) and path.is_dir() and now - path.stat().st_mtime > max_age:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 # ---------------------------------------------------------------------------- what the page shows

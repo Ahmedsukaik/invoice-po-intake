@@ -66,10 +66,11 @@ class RefusingApi(SimulatedApi):
                                headers={"request-id": "req_refused"})
 
 
-def fake_reader(answer: dict[str, Any] | None = None, **api: Any) -> tuple[Any, SimulatedApi]:
+def fake_reader(answer: dict[str, Any] | None = None, served: str = "claude-haiku-5-5", **api: Any) -> tuple[Any, SimulatedApi]:
     """The demo's real AI reader (the product's ClaudeExtractor, real Anthropic SDK) with the network
-    replaced by a simulated, streamed API. Returns (reader, api) so a test can see the requests."""
-    simulated = SimulatedApi(answer if answer is not None else sample_10_answer(), model="claude-haiku-5-5", **api)
+    replaced by a simulated, streamed API. Returns (reader, api) so a test can see the requests.
+    served: the model name the simulated API answers with."""
+    simulated = SimulatedApi(answer if answer is not None else sample_10_answer(), model=served, **api)
     return make_reader(simulated.client), simulated
 
 

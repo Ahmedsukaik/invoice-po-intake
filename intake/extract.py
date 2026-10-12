@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -329,9 +330,13 @@ class ClaudeExtractor:
     """
 
     def __init__(self, client: Any | None = None, model: str | None = None, effort: str | None = None,
-                 fallbacks: str | None = None, date_order: str | None = None, max_tokens: int = MAX_TOKENS):
+                 fallbacks: str | None = None, date_order: str | None = None, max_tokens: int = MAX_TOKENS,
+                 deadline: float | None = None):
         env = os.environ
         self.max_tokens = max_tokens
+        # Seconds the whole streamed answer may take. The SDK's timeout counts from one chunk to
+        # the next, so a slow but steady answer could run far past it; None: no overall limit.
+        self.deadline = deadline
         self.model = (model or env.get("INTAKE_CLAUDE_MODEL") or DEFAULT_MODEL).strip()
         if not re.fullmatch(r"claude-[a-z0-9.-]{1,60}", self.model):
             raise SystemExit("INTAKE_CLAUDE_MODEL must be a Claude model id such as claude-sonnet-5-5.")
@@ -418,6 +423,12 @@ class ClaudeExtractor:
         request_id = None
         try:
             with self._client.beta.messages.stream(**self.request(pdf_bytes)) as stream:
+                if self.deadline is not None:
+                    started = time.monotonic()
+                    for _ in stream:
+                        if time.monotonic() - started > self.deadline:
+                            raise ReaderUnavailable(f"The Claude API took longer than {self.deadline:g} seconds, so "
+                                                    "the answer was not waited for. Use 'Read the PDF again' later.")
                 response = stream.get_final_message()
                 raw = getattr(stream, "response", None)
                 request_id = raw.headers.get("request-id") if raw is not None else None

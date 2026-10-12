@@ -235,4 +235,63 @@ def test_the_page_has_no_contact_details_and_one_link():
 def test_the_page_uses_plain_words_and_no_dashes_as_punctuation():
     for name in ("index.html", "app.js"):
         page = (PUBLIC / name).read_text(encoding="utf-8")
-        assert "—" not in page and "–" not in page, name
+        assert "\u2014" not in page and "\u2013" not in page, name
+
+
+# ------------------------------------------------------------------ hardening from the first review
+WRONG_TYPES = [["sara"], {"a": 1}, 5, 1.5, True, None]
+
+
+@pytest.mark.parametrize("value", WRONG_TYPES, ids=["list", "dict", "int", "float", "bool", "null"])
+def test_a_field_of_the_wrong_type_is_refused_never_a_500(client, value):
+    demo = DemoClient(client)
+    demo.add("08")
+    version = demo.doc("08")["version"]
+    actions = [{"type": value}, {"type": "add", "sample": value}]
+    for field in ("doc", "by", "ack", "note", "version"):
+        actions.append({**{"type": "approve", "doc": "doc_08", "by": "sara", "ack": [], "note": "", "version": version},
+                        field: value})
+    for field in ("doc", "by", "reason"):
+        actions.append({**{"type": "reject", "doc": "doc_08", "by": "sara", "reason": "A reason."}, field: value})
+    for field in ("fields", "lines", "note", "version"):
+        actions.append({**{"type": "correct", "doc": "doc_08", "by": "sara", "fields": {}, "lines": [], "note": "",
+                           "version": version}, field: value})
+    for action in actions:
+        res = client.post("/api/step", json={"session": demo.session, "action": action})
+        assert res.status_code in (200, 409), (action, res.status_code, res.text)
+
+
+@pytest.mark.parametrize("where", ["reason", "note", "vendor", "doc", "session", "key"])
+def test_text_that_is_not_valid_unicode_is_refused_never_a_500(client, where):
+    demo = DemoClient(client)
+    demo.add("08")
+    bad = "abc \\ud800 def"
+    session = json.dumps(demo.session)
+    action = {"reason": '{"type": "reject", "doc": "doc_08", "by": "sara", "reason": "%s"}' % bad,
+              "note": '{"type": "approve", "doc": "doc_08", "by": "sara", "note": "%s", "version": 1}' % bad,
+              "vendor": '{"type": "correct", "doc": "doc_08", "by": "sara", "fields": {"vendor_name": "%s"}, "version": 1}' % bad,
+              "doc": '{"type": "approve", "doc": "doc_\\udc0008", "by": "sara", "version": 1}',
+              "session": '{"type": "view"}',
+              "key": '{"type": "correct", "doc": "doc_08", "by": "sara", "fields": {"\\ud800": "x"}, "version": 1}'}[where]
+    if where == "session":
+        session = session.replace('"v": 1', '"v": 1, "x": "\\ud800"')
+    res = raw_post(client, '{"session": ' + session + ', "action": ' + action + "}")
+    assert res.status_code == 409 and res.json()["error"] == "action"
+
+
+def test_the_ai_allowance_is_used_only_when_the_call_happens(monkeypatch):
+    monkeypatch.setattr(demo_web, "PER_VISITOR_AI", (1, 600))
+    monkeypatch.setattr(demo_web, "PER_INSTANCE_AI", (0, 3600))
+    reader, api = fake_reader()
+    app = create_app(reader=reader)
+    client = TestClient(app)
+    assert DemoClient(client).add("10")["ai"] == {"status": "busy"}  # the instance is full: the visitor's read is kept
+    monkeypatch.setattr(demo_web, "PER_INSTANCE_AI", (200, 3600))
+    assert DemoClient(client).add("10")["ai"]["status"] == "ok" and len(api.requests) == 1
+
+
+def test_the_limiter_takes_all_allowances_or_none():
+    limiter = Limiter()
+    assert limiter.take(("a", 1, 60), ("b", 0, 60)) == "b"
+    assert limiter.take(("a", 1, 60), ("b", 5, 60)) is None  # "a" was not used by the refused attempt
+    assert limiter.take(("a", 1, 60), ("b", 5, 60)) == "a"

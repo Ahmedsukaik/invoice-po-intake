@@ -411,3 +411,51 @@ def test_hostile_text_in_a_pdf_is_returned_as_plain_data(tmp_path, monkeypatch):
     d = v.add("99")
     assert d["vendor"] == HOSTILE_NAME and d["lines"][0]["description"] == HOSTILE_LINE  # kept exactly, as data
     assert any(HOSTILE_NAME in f["message"] for f in d["findings"])
+
+
+# ------------------------------------------------------------------ hardening from the first review
+def test_a_slow_ai_answer_goes_to_a_person_before_the_function_times_out(monkeypatch):
+    from test_claude import SlowApi
+    monkeypatch.setattr(demo_session, "AI_DEADLINE", 0.3)
+    api = SlowApi(gap=0.12, model="claude-haiku-5-5")
+    v = Visitor(reader=demo_session.make_reader(api.client))
+    d = v.add("10")
+    assert d["ai"] == {"status": "busy"} and d["status"] == "needs_manual_entry"
+
+
+def test_the_cost_is_priced_by_the_model_asked_for():
+    reader, _ = fake_reader(served="claude-haiku-5-5-20261001")
+    v = Visitor(reader=reader)
+    d = v.add("10")
+    reading = v.session["events"][0]["reading"]
+    assert reading["model"] == "claude-haiku-5-5" and reading["served"] == "claude-haiku-5-5-20261001"
+    assert d["ai"]["cost_usd"] > 0 and v.view["metrics"]["cost_usd"] > 0
+
+
+def test_a_session_too_large_to_send_back_is_never_signed():
+    v = Visitor()
+    v.add("08")
+    bulky = [{"sku": "x" * 200, "description": "y" * 200, "quantity": "1", "unit_price": "1", "line_total": "1"}] * 20
+    sizes = []
+    with pytest.raises(ActionError, match="session is full"):
+        for _ in range(60):
+            v.do({"type": "correct", "doc": "doc_08", "by": "sara", "fields": {}, "lines": bulky, "note": "z" * 500,
+                  "version": v.doc("08")["version"]})
+            sizes.append(len(json.dumps(v.session)))
+    assert sizes and max(sizes) <= demo_session.MAX_SESSION_BYTES + 200
+    assert handle(v.session, {"type": "view"})["view"]["documents"]  # the last session handed out still works
+
+
+def test_stale_temporary_folders_are_cleared_at_start_up():
+    import os
+    import time
+    old = Path(tempfile.mkdtemp(prefix=TMP_PREFIX))
+    fresh = Path(tempfile.mkdtemp(prefix=TMP_PREFIX))
+    (old / "intake.db").write_text("x")
+    an_hour_ago = time.time() - 3600
+    os.utime(old, (an_hour_ago, an_hour_ago))
+    try:
+        assert demo_session.clear_stale_folders() >= 1
+        assert not old.exists() and fresh.exists()
+    finally:
+        fresh.rmdir()

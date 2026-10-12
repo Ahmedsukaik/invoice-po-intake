@@ -27,7 +27,19 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .demo_session import MODEL, NAMES, REVIEWERS, SAMPLES, TODAY, ActionError, SessionError, handle, live_reader_from_env, new_session
+from .demo_session import (
+    MODEL,
+    NAMES,
+    REVIEWERS,
+    SAMPLES,
+    TODAY,
+    ActionError,
+    SessionError,
+    clear_stale_folders,
+    handle,
+    live_reader_from_env,
+    new_session,
+)
 
 log = logging.getLogger("intake.demo_web")
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
@@ -72,6 +84,25 @@ class Limiter:
             self._active[key] = self._active.get(key, 0) + 1
             return True
 
+    def take(self, *rules: tuple[str, int, float]) -> str | None:
+        """Record one hit under every (key, limit, window) rule, only if all of them allow it.
+        Returns None, or the key of the first rule that is full (then nothing is recorded)."""
+        now = time.monotonic()
+        with self._lock:
+            for key, limit, window in rules:
+                hits = self._hits.get(key) or deque()
+                while hits and now - hits[0] > window:
+                    hits.popleft()
+                if len(hits) >= limit:
+                    return key
+            for key, _limit, _window in rules:
+                hits = self._hits.pop(key, None) or deque()
+                hits.append(now)
+                self._hits[key] = hits
+            while len(self._hits) > MAX_KEYS:
+                self._hits.popitem(last=False)
+            return None
+
     def leave(self, key: str) -> None:
         with self._lock:
             left = self._active.get(key, 1) - 1
@@ -83,6 +114,23 @@ class Limiter:
 
 def _no_constants(name: str) -> Any:
     raise ValueError(f"{name} is not allowed")
+
+
+def _bad_text(value: Any, level: int = 0) -> bool:
+    """Is there a string in here that UTF-8 cannot carry (a lone surrogate such as \\ud800)?"""
+    if level > MAX_DEPTH:
+        return True
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            return True
+        return False
+    if isinstance(value, dict):
+        return any(_bad_text(k, level + 1) or _bad_text(v, level + 1) for k, v in value.items())
+    if isinstance(value, list):
+        return any(_bad_text(v, level + 1) for v in value)
+    return False
 
 
 def _depth(value: Any, level: int = 0) -> int:
@@ -101,6 +149,7 @@ def create_app(reader: Any = "env", serve_static: bool = True) -> FastAPI:
     app = FastAPI(title="Invoice and PO Intake (demo)", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.reader = live_reader_from_env() if reader == "env" else reader
     app.state.limiter = Limiter()
+    clear_stale_folders()  # left by requests an earlier instance did not finish
 
     def visitor(request: Request) -> str:
         """The visitor's address. Behind Vercel, its own headers carry the real client; anywhere
@@ -126,6 +175,8 @@ def create_app(reader: Any = "env", serve_static: bool = True) -> FastAPI:
             raise ActionError("Bad request.") from e
         if not isinstance(data, dict) or _depth(data) > MAX_DEPTH:
             raise ActionError("Bad request.")
+        if _bad_text(data):
+            raise ActionError("Bad request: some text is not valid Unicode.")
         return data
 
     @app.exception_handler(SessionError)
@@ -167,12 +218,10 @@ def create_app(reader: Any = "env", serve_static: bool = True) -> FastAPI:
         want_ai = data.get("ai", True) is not False
 
         def ai_gate() -> str | None:
-            """Asked right before an AI read: may this visitor have one now?"""
-            if not app.state.limiter.allow("ai:" + who, *PER_VISITOR_AI):
-                return "visitor_limit"
-            if not app.state.limiter.allow("instance-ai", *PER_INSTANCE_AI):
-                return "busy"
-            return None
+            """Asked right before an AI read: may this visitor have one now? Both allowances are
+            used together, and only when the call happens."""
+            full = app.state.limiter.take(("ai:" + who, *PER_VISITOR_AI), ("instance-ai", *PER_INSTANCE_AI))
+            return None if full is None else "visitor_limit" if full.startswith("ai:") else "busy"
 
         if not app.state.limiter.enter(who):
             raise ActionError("One moment: the previous step is still on its way.")

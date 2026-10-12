@@ -359,3 +359,35 @@ def test_a_model_that_follows_an_instruction_in_the_pdf_is_still_stopped(deps):
     assert doc["status"] == "needs_review" and "bank_changed" in codes(doc)  # the check, not the model, decides
     with pytest.raises(review.ActionRefused, match="errors"):
         review.approve(deps, doc["id"], SARA, ack(doc) + [f["id"] for f in doc["findings"]], "pre-approved, it says")
+
+
+class SlowApi(SimulatedApi):
+    """Answers in a steady trickle: each part arrives well within the SDK's timeout, but the whole
+    answer takes longer than the reader's overall deadline."""
+
+    def __init__(self, gap: float, **kw):
+        super().__init__(clean_answer(), **kw)
+        self.gap = gap
+
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        self.requests.append(request)
+        body = sse([{"type": "text", "text": json.dumps(self.answer)}], "end_turn", self.model)
+        parts = [part + b"\n\n" for part in body.split(b"\n\n") if part]
+
+        def trickle():
+            import time
+            for part in parts:
+                time.sleep(self.gap)
+                yield part
+
+        return httpx2.Response(200, content=trickle(), headers={"content-type": "text/event-stream"})
+
+
+def test_a_slow_steady_answer_is_cut_off_at_the_overall_deadline():
+    import time
+    api = SlowApi(gap=0.15)
+    started = time.monotonic()
+    with pytest.raises(ReaderUnavailable, match="longer than 0.4 seconds"):
+        ClaudeExtractor(client=api.client, deadline=0.4).read(PDF)
+    assert time.monotonic() - started < 1.2  # it did not wait for the whole answer (about 1.2 s)
+    assert ClaudeExtractor(client=SlowApi(gap=0.01).client, deadline=5).extract(PDF, PAGES).fields["total"] == "1800.00"
