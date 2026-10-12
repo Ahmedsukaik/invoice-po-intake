@@ -9,7 +9,7 @@ Supplier invoices read from the PDF, checked against the purchase order and the 
 - Duplicates are caught even when the number is written differently.
 - Every value shows the line on the PDF it came from; every step is in the audit trail.
 
-Status: the demo layout is read with fixed rules. Other layouts need the Claude reader, tested against a simulated API and not yet run live. Scans are typed in by a person. 356 tests pass.
+Status: the demo layout is read with fixed rules. Other layouts need the Claude reader, tested against a simulated API and not yet run live. Scans are typed in by a person. 365 tests pass.
 
 ![The reviewer page: an invoice whose totals do not add up. The wrong line and totals are marked, and three findings must be ticked before it can be approved.](docs/img/reviewer-page.png)
 
@@ -97,9 +97,9 @@ How it works:
   event and goes through the Claude reader's own checks again on every replay, so a stored
   answer is held to the same rules as a fresh one and costs nothing the second time.
 - **The AI reader** is the product's `ClaudeExtractor` with Claude Haiku 5.5 at effort low,
-  streamed, at most 8,000 output tokens and no retries. The whole answer may take 35 seconds
-  and the API may stay silent for 15 at most (Vercel stops a function at 60); past that the
-  file goes to a person. Only sample 10 uses it. Limits: 5 AI readings per visitor per 10 minutes and 200 per server instance per
+  streamed, at most 8,000 output tokens and no retries. A read takes about 40 seconds at most,
+  counted from before the request is sent (Vercel stops a function at 60); past that the file
+  goes to a person. Only sample 10 uses it. Limits: 5 AI readings per visitor per 10 minutes and 200 per server instance per
   hour; the hard limit is the spend cap on the key. Over a limit, without a key, or when the
   key's spend limit is reached, sample 10 goes to a person and the page says why.
 - **The pages of each PDF** are PNG previews rendered once, at development time
@@ -131,8 +131,8 @@ Deploying on Vercel needs two settings in the project, for Production, then a re
 
 | What was run | How | Result |
 |---|---|---|
-| Replay, signing, limits, hostile input, the story through the API (in-process test client) | `pytest tests/test_demo_session.py tests/test_demo_web.py` | 86 tests pass |
-| The story in a browser | `pytest tests/test_demo_ui.py`, Chrome at 1440x900, 1280x720, 390x844, 360x640, and a touch screen | 18 tests pass; at every step the button or finding it asks for is fully on screen |
+| Replay, signing, limits, hostile input, the story through the API (in-process test client) | `pytest tests/test_demo_session.py tests/test_demo_web.py` | 88 tests pass |
+| The story in a browser | `pytest tests/test_demo_ui.py`, Chrome at 1440x900, 1280x720, 390x844, 360x640, and a touch screen | 20 tests pass; at every step the button or finding it asks for is fully on screen |
 | The AI reader on sample 10 | simulated Anthropic API (the real SDK, a streamed answer) | every value read with its source line, matched to PO-2026-0105, one call, cost shown |
 | Spend limit, rate limit, overload, bad request | simulated API errors | sample 10 goes to a person; the page names the reason |
 | **Claude Haiku 5.5 live on sample 10** | the deployed demo with its key | **Not run yet: it runs once the demo is deployed with its key.** |
@@ -325,7 +325,7 @@ throwaway database and folders, and prints twelve short scenes:
 Options: `--pause` stops after each scene (useful when recording); `--serve` keeps the
 server running afterwards with one invoice waiting in "To review", and prints the sign-in
 tokens; `--keep` keeps the temporary folder with the database and the export files. The
-test suite has 356 test cases (104 of them for the web demo, 18 of those in a real browser).
+test suite has 365 test cases (108 of them for the web demo, 20 of those in a real browser).
 `python -m ruff check .` checks the code style.
 
 ## Running the pieces yourself
@@ -571,7 +571,7 @@ docs/USER_GUIDE.md     for the clerks and reviewers who use it
 docs/img/              screenshots and recordings of the reviewer page and of the web demo
 docs/make_media.py     records the web demo's tour and screenshots
 requirements-dev.txt   requirements.txt plus pytest, fpdf2, ruff, pypdfium2 and Playwright
-tests/                 356 test cases; 47 start the server and use real HTTP, 18 drive Chrome
+tests/                 365 test cases; 47 start the server and use real HTTP, 20 drive Chrome
 ```
 
 ## What the tests cover, and what they do not
