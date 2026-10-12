@@ -9,7 +9,7 @@ Supplier invoices read from the PDF, checked against the purchase order and the 
 - Duplicates are caught even when the number is written differently.
 - Every value shows the line on the PDF it came from; every step is in the audit trail.
 
-Status: the demo layout is read with fixed rules. Other layouts need the Claude reader, tested against a simulated API and not yet run live. Scans are typed in by a person. 365 tests pass.
+Status: the demo layout is read with fixed rules. Other layouts need the Claude reader: on 12 Oct 2026 it read the unseen layout (sample 10) live on the demo in about 12 seconds, every value with its source line. Scans are typed in by a person. 365 tests pass.
 
 ![The reviewer page: an invoice whose totals do not add up. The wrong line and totals are marked, and three findings must be ticked before it can be approved.](docs/img/reviewer-page.png)
 
@@ -135,7 +135,7 @@ Deploying on Vercel needs two settings in the project, for Production, then a re
 | The story in a browser | `pytest tests/test_demo_ui.py`, Chrome at 1440x900, 1280x720, 390x844, 360x640, and a touch screen | 20 tests pass; at every step the button or finding it asks for is fully on screen |
 | The AI reader on sample 10 | simulated Anthropic API (the real SDK, a streamed answer) | every value read with its source line, matched to PO-2026-0105, one call, cost shown |
 | Spend limit, rate limit, overload, bad request | simulated API errors | sample 10 goes to a person; the page names the reason |
-| **Claude Haiku 5.5 live on sample 10** | the deployed demo with its key | **Not run yet: it runs once the demo is deployed with its key.** |
+| **Claude Haiku 5.5 live on sample 10** | the deployed demo with its key | Run once, 12 Oct 2026: read in 11.8 s, every value with its source line, matched to its PO; one model concern shown to the reviewer as a warning. |
 
 ---
 
