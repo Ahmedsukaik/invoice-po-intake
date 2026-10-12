@@ -499,3 +499,19 @@ def test_renumbering_the_first_copy_cannot_get_both_copies_exported():
     [batch] = v.view["exports"]
     rows = list(csv.DictReader(io.StringIO(next(f for f in batch["files"] if f["name"] == "invoices.csv")["content"])))
     assert [r["invoice_number"] for r in rows] == ["INV-A-1001-R"]
+
+
+def test_plain_words_read_as_whole_sentences():
+    from intake.demo_session import plain
+    assert plain("Bank details read from the PDF cannot be changed here. They come from the vendor master; a change there "
+                 "goes through its own controlled process.") == (
+        "Bank details read from the PDF cannot be changed here. Payment uses the details on file, which change only "
+        "through their own checks.")
+    assert plain("You typed in or changed values on this document, so another reviewer must approve it (four-eyes rule).") \
+        == "You typed in or changed values on this document, so a second person must approve it."
+    assert plain("The PDF has no text layer (it looks scanned). It needs OCR or manual entry.") == \
+        "The PDF has no text layer (it looks scanned)."
+    v = Visitor()
+    scan = v.add("08")
+    assert scan["manual_reason"] == "The PDF has no text layer (it looks scanned)."
+    assert all("A person types it in" not in f["message"] and "  " not in f["message"] for f in scan["findings"])

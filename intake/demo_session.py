@@ -80,8 +80,10 @@ MODEL_ID = re.compile(r"claude-[a-z0-9.-]{1,60}")
 # from Anthropic's pricing page (October 2026), for the cost the page shows.
 MODEL = "claude-haiku-5-5"
 AI_MAX_TOKENS = 8000
-AI_DEADLINE = 35.0        # seconds for the whole answer; past it the file goes to a person (Vercel stops at 60)
-AI_SILENCE = 15.0         # seconds the API may stay silent between two parts of the answer
+# The whole read stays near 40 seconds (Vercel stops a function at 60): the clock starts before the
+# stream opens, no new part is waited for after 25 seconds, and a silence may last 15 at most.
+AI_DEADLINE = 25.0
+AI_SILENCE = 15.0
 PRICES = {"claude-haiku-5-5": (0.10, 0.50)}
 MAX_SESSION_BYTES = 240_000  # a signed session larger than this is never handed out (the server reads 300 KB)
 STALE_AFTER = 600            # seconds after which a leftover temporary folder is removed at start-up
@@ -672,6 +674,11 @@ def clear_stale_folders(max_age: float = STALE_AFTER) -> int:
 # The product speaks to accounts payable staff ("vendor master", "2-way match"). The demo page
 # speaks to anyone: the same findings, the same ids, in plainer words.
 PLAIN = [
+    # whole sentences first, so they read as sentences rather than patched phrases
+    ("They come from the vendor master; a change there goes through its own controlled process.",
+     "Payment uses the details on file, which change only through their own checks."),
+    ("so another reviewer must approve it (four-eyes rule).", "so a second person must approve it."),
+    (" It needs OCR or manual entry.", ""),
     ("Bank details differ from the vendor master", "Bank details differ from those on file"),
     ("Not a supplier in the vendor master", "Not a supplier on file"),
     ("is not in the vendor master", "is not on file"),
@@ -685,7 +692,7 @@ PLAIN = [
     ("the vendor master", "the supplier's file"),
     ("Goods receipts are not checked (2-way match).", "Checked against the PO only."),
     ("(four-eyes rule)", "(a second person must approve)"),
-    ("It needs OCR or manual entry.", "A person types it in."),
+    ("It needs OCR or manual entry.", ""),
 ]
 NO_MASTER = re.compile(r"The vendor master has no (.+?) for ")
 DOC_ID = re.compile(r"\bdoc_(\d{2})\b")

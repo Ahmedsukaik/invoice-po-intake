@@ -365,12 +365,14 @@ class SlowApi(SimulatedApi):
     """Answers in a steady trickle: each part arrives well within the SDK's timeout, but the whole
     answer takes longer than the reader's overall deadline."""
 
-    def __init__(self, gap: float, **kw):
+    def __init__(self, gap: float, opening: float = 0.0, **kw):
         super().__init__(clean_answer(), **kw)
-        self.gap = gap
+        self.gap, self.opening = gap, opening
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        import time
         self.requests.append(request)
+        time.sleep(self.opening)  # the API takes a while before the first byte
         body = sse([{"type": "text", "text": json.dumps(self.answer)}], "end_turn", self.model)
         parts = [part + b"\n\n" for part in body.split(b"\n\n") if part]
 
@@ -391,3 +393,12 @@ def test_a_slow_steady_answer_is_cut_off_at_the_overall_deadline():
         ClaudeExtractor(client=api.client, deadline=0.4).read(PDF)
     assert time.monotonic() - started < 1.2  # it did not wait for the whole answer (about 1.2 s)
     assert ClaudeExtractor(client=SlowApi(gap=0.01).client, deadline=5).extract(PDF, PAGES).fields["total"] == "1800.00"
+
+
+def test_the_overall_deadline_counts_the_wait_before_the_first_byte():
+    import time
+    api = SlowApi(gap=0.15, opening=0.4)
+    started = time.monotonic()
+    with pytest.raises(ReaderUnavailable):
+        ClaudeExtractor(client=api.client, deadline=0.5).read(PDF)
+    assert time.monotonic() - started < 0.85  # counted from before the stream opened, not after (about 1 s)

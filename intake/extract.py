@@ -421,10 +421,10 @@ class ClaudeExtractor:
             "RateLimitError", "InternalServerError", "OverloadedError", "ServiceUnavailableError",
             "DeadlineExceededError", "APIConnectionError", "APITimeoutError") if hasattr(anthropic, name))
         request_id = None
+        started = time.monotonic()  # before the stream opens: waiting for the first byte counts too
         try:
             with self._client.beta.messages.stream(**self.request(pdf_bytes)) as stream:
                 if self.deadline is not None:
-                    started = time.monotonic()
                     for _ in stream:
                         if time.monotonic() - started > self.deadline:
                             raise ReaderUnavailable(f"The Claude API took longer than {self.deadline:g} seconds, so "
