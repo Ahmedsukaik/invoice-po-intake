@@ -135,7 +135,7 @@ def test_nan_and_deep_nesting_are_refused(client):
 @pytest.mark.parametrize("change", ['"sig": "' + "\\u00e9" * 64 + '"', '"sig": 12', '"v": 1.0e400'],
                          ids=["non-ascii signature", "number signature", "huge number"])
 def test_odd_signatures_are_refused_not_crashing(client, change):
-    session = client.post("/api/new").json()["session"]
+    session = client.post("/api/new", json={}).json()["session"]
     body = json.dumps(session)[:-1] + ", " + change + "}"
     res = raw_post(client, '{"session": ' + body + ', "action": {"type": "view"}}')
     assert res.status_code == 409
@@ -144,7 +144,7 @@ def test_odd_signatures_are_refused_not_crashing(client, change):
 def test_every_kind_of_request_is_counted_per_visitor(monkeypatch):
     monkeypatch.setattr(demo_web, "PER_VISITOR_REQUESTS", (3, 600))
     client = TestClient(create_app(reader=None))
-    session = client.post("/api/new").json()["session"]
+    session = client.post("/api/new", json={}).json()["session"]
     codes = [client.post("/api/step", json={"session": session, "action": {"type": "view"}}).status_code for _ in range(4)]
     assert codes == [200, 200, 200, 409]
 
@@ -153,7 +153,7 @@ def test_x_forwarded_for_is_ignored_unless_running_on_vercel(monkeypatch):
     monkeypatch.setattr(demo_web, "PER_VISITOR_REQUESTS", (2, 600))
     monkeypatch.delenv("VERCEL", raising=False)
     client = TestClient(create_app(reader=None))
-    session = client.post("/api/new").json()["session"]
+    session = client.post("/api/new", json={}).json()["session"]
     codes = [client.post("/api/step", json={"session": session, "action": {"type": "view"}},
                          headers={"x-forwarded-for": f"10.0.0.{i}"}).status_code for i in range(3)]
     assert codes == [200, 200, 409]
@@ -296,3 +296,104 @@ def test_the_limiter_takes_all_allowances_or_none():
     assert limiter.take(("a", 1, 60), ("b", 0, 60)) == "b"
     assert limiter.take(("a", 1, 60), ("b", 5, 60)) is None  # "a" was not used by the refused attempt
     assert limiter.take(("a", 1, 60), ("b", 5, 60)) == "a"
+
+
+# ------------------------------------------------------------------ requests from other sites, IPv6 visitors, headers
+@pytest.mark.parametrize("path", ["/api/new", "/api/step"])
+@pytest.mark.parametrize("content_type", [None, "text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"])
+def test_api_posts_that_are_not_json_are_refused(client, path, content_type):
+    headers = {"Content-Type": content_type} if content_type else {}
+    res = client.post(path, content=b'{"session": {}, "action": {"type": "view"}}', headers=headers)
+    assert res.status_code == 415 and res.json()["error"] == "request" and len(res.json()["message"]) < 80
+
+
+@pytest.mark.parametrize("path", ["/api/new", "/api/step"])
+def test_api_posts_marked_cross_site_by_the_browser_are_refused(client, path):
+    res = client.post(path, json={}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert res.status_code == 403 and res.json()["error"] == "forbidden"
+    assert client.post(path, content=b"{}", headers={"Sec-Fetch-Site": "cross-site", "Content-Type": "text/plain"}).status_code == 403
+
+
+@pytest.mark.parametrize("fetch_site", [None, "same-origin", "same-site", "none"])
+def test_the_page_own_json_posts_still_work(client, fetch_site):
+    headers = {"Content-Type": "application/json; charset=utf-8"} | ({"Sec-Fetch-Site": fetch_site} if fetch_site else {})
+    new = client.post("/api/new", content=b"{}", headers=headers)
+    assert new.status_code == 200
+    step = client.post("/api/step", json={"session": new.json()["session"], "action": {"type": "view"}}, headers=headers)
+    assert step.status_code == 200
+    for path in ("/api/config", "/api/samples/01/pdf"):  # reading is not refused
+        assert client.get(path, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
+
+
+def test_a_refused_request_reaches_neither_the_ai_reader_nor_the_limits(monkeypatch):
+    monkeypatch.setattr(demo_web, "PER_VISITOR_REQUESTS", (1, 600))
+    reader, api = fake_reader()
+    client = TestClient(create_app(reader=reader))
+    session = client.post("/api/new", json={}).json()["session"]
+    body = {"session": session, "action": {"type": "add", "sample": "10"}}
+    assert client.post("/api/step", json=body, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert client.post("/api/step", content=json.dumps(body), headers={"Content-Type": "text/plain"}).status_code == 415
+    assert api.requests == []
+    assert client.post("/api/step", json=body).status_code == 200 and len(api.requests) == 1  # the one allowed request was not used up
+
+
+def test_ipv6_visitors_are_counted_by_their_64(monkeypatch):
+    from intake.demo_web import visitor_key
+    assert visitor_key("2001:db8:1:2:aaaa::1") == visitor_key("2001:db8:1:2:ffff::9") == "2001:db8:1:2::/64"
+    assert visitor_key("[2001:db8:1:2::1]") == "2001:db8:1:2::/64"
+    assert visitor_key("2001:db8:1:3::1") != visitor_key("2001:db8:1:2::1")
+    assert visitor_key("203.0.113.7") == "203.0.113.7" and visitor_key("::ffff:203.0.113.7") == "203.0.113.7"
+    assert visitor_key("203.0.113.8") != visitor_key("203.0.113.7")  # IPv4 stays one address per visitor
+    assert visitor_key("not an address") == "not an address"
+    monkeypatch.setattr(demo_web, "PER_VISITOR_REQUESTS", (2, 600))
+    monkeypatch.setenv("VERCEL", "1")
+    client = TestClient(create_app(reader=None))
+    session = client.post("/api/new", json={}).json()["session"]
+
+    def step(address: str) -> int:
+        return client.post("/api/step", json={"session": session, "action": {"type": "view"}},
+                           headers={"x-vercel-forwarded-for": address}).status_code
+
+    assert [step(f"2001:db8:5:6::{i}") for i in range(1, 4)] == [200, 200, 409]  # a new address in the same /64 is the same visitor
+    assert step("2001:db8:5:7::1") == 200  # the next /64 is someone else
+    assert [step(f"198.51.100.{i}") for i in range(1, 4)] == [200, 200, 200]
+
+
+def test_the_ai_allowance_is_per_64_for_ipv6_visitors(monkeypatch):
+    monkeypatch.setattr(demo_web, "PER_VISITOR_AI", (1, 600))
+    monkeypatch.setenv("VERCEL", "1")
+    reader, api = fake_reader()
+    client = TestClient(create_app(reader=reader))
+
+    def add_10(address: str) -> dict:
+        session = client.post("/api/new", json={}).json()["session"]
+        res = client.post("/api/step", json={"session": session, "action": {"type": "add", "sample": "10"}},
+                          headers={"x-vercel-forwarded-for": address})
+        return next(d for d in res.json()["view"]["documents"] if d["key"] == "10")
+
+    assert add_10("2001:db8:9:9::1")["ai"]["status"] == "ok"
+    assert add_10("2001:db8:9:9::2")["ai"] == {"status": "visitor_limit"}  # another address, same connection
+    assert len(api.requests) == 1
+
+
+def test_the_page_gets_the_same_security_headers_here_as_on_vercel(client):
+    from intake.demo_web import SECURITY_HEADERS
+    config = json.loads((PUBLIC.parent / "vercel.json").read_text(encoding="utf-8"))
+    on_vercel = {h["key"]: h["value"] for h in config["headers"][0]["headers"]}
+    assert config["headers"][0]["source"] == "/(.*)" and on_vercel == SECURITY_HEADERS
+    csp = SECURITY_HEADERS["Content-Security-Policy"]
+    assert "script-src 'self';" in csp and "frame-ancestors 'none'" in csp and "unsafe-eval" not in csp
+    assert "unsafe-inline" not in csp.split("style-src")[0]  # inline styles only, never inline scripts
+    assert "font-src https://fonts.gstatic.com" in csp and "img-src 'self' data:" in csp
+    assert "object-src" not in csp  # the browser's own PDF viewer opens the sample PDFs
+    for res in (client.get("/"), client.get("/app.js"), client.get("/api/config"), client.get("/api/samples/01/pdf"),
+                client.post("/api/new", content=b"{}")):
+        for name, value in SECURITY_HEADERS.items():
+            assert res.headers[name] == value, (res.request.url, name)
+
+
+def test_the_page_has_no_inline_script():
+    page = (PUBLIC / "index.html").read_text(encoding="utf-8")
+    assert all(' src="' in tag for tag in re.findall(r"<script\b[^>]*>", page))
+    for name in ("index.html", "app.js"):
+        assert not re.search(r"<[^>]+\son[a-z]+=", (PUBLIC / name).read_text(encoding="utf-8")), name  # no onclick= and the like

@@ -79,7 +79,7 @@ class DemoClient:
 
     def __init__(self, client: TestClient):
         self.http = client
-        data = client.post("/api/new").json()
+        data = client.post("/api/new", json={}).json()
         self.session: dict[str, Any] = data["session"]
         self.view: dict[str, Any] = data["view"]
         self.result: dict[str, Any] | None = None

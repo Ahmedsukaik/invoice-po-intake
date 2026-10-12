@@ -13,6 +13,7 @@ uploads and an export folder. The demo has no uploads: only the sample PDFs in s
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import logging
 import os
@@ -51,6 +52,26 @@ PER_VISITOR_AI = (5, 600)          # AI reads per visitor per 10 minutes
 PER_INSTANCE_AI = (200, 3600)      # AI reads per server instance per hour
 MAX_ACTIVE = 2                     # requests in progress at once per visitor
 MAX_KEYS = 5000                    # visitors the limiter remembers per instance
+
+# The same headers vercel.json sets on the deployed site (a test keeps the two equal), so the page is
+# tested locally under the Content-Security-Policy it gets in production. Styles may be inline: the
+# page places the marks and crops on each sheet with style attributes. No inline scripts.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Frame-Options": "DENY",
+}
 
 
 class Limiter:
@@ -143,6 +164,31 @@ def _depth(value: Any, level: int = 0) -> int:
     return level
 
 
+def visitor_key(address: str) -> str:
+    """The key the limits count by: an IPv4 address as it is, an IPv6 address by its /64 network
+    (one home or phone connection usually holds a whole /64, so each address in it is the same visitor)."""
+    try:
+        ip = ipaddress.ip_address(address.strip("[]"))
+    except ValueError:
+        return address[:64]
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is None:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip.ipv4_mapped or ip) if isinstance(ip, ipaddress.IPv6Address) else str(ip)
+
+
+def cross_site_refusal(request: Request) -> JSONResponse | None:
+    """Every POST to the API must be JSON sent by the demo page itself. A form or script on another
+    site can only send JSON after the browser asks this server first (and it never says yes), and
+    browsers mark requests from another site with Sec-Fetch-Site. None lets the request through."""
+    if request.method in ("GET", "HEAD", "OPTIONS") or not request.url.path.startswith("/api/"):
+        return None
+    if request.headers.get("sec-fetch-site", "").strip().lower() == "cross-site":
+        return JSONResponse({"error": "forbidden", "message": "Requests from other sites are not accepted."}, status_code=403)
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+        return JSONResponse({"error": "request", "message": "Send the request as JSON."}, status_code=415)
+    return None
+
+
 def create_app(reader: Any = "env", serve_static: bool = True) -> FastAPI:
     """reader: the AI reader (a ClaudeExtractor, or a stand-in in tests), None for the rules reader
     alone, or "env" to decide from the environment."""
@@ -151,14 +197,26 @@ def create_app(reader: Any = "env", serve_static: bool = True) -> FastAPI:
     app.state.limiter = Limiter()
     clear_stale_folders()  # left by requests an earlier instance did not finish
 
+    @app.middleware("http")
+    async def same_site_json_only(request: Request, call_next: Any) -> Any:
+        refused = cross_site_refusal(request)
+        return refused if refused is not None else await call_next(request)
+
+    @app.middleware("http")  # added last, so it runs first and also covers the refusals above
+    async def security_headers(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        for key, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(key, value)
+        return response
+
     def visitor(request: Request) -> str:
-        """The visitor's address. Behind Vercel, its own headers carry the real client; anywhere
+        """The visitor, for the limits. Behind Vercel, its own headers carry the real client; anywhere
         else, a client could write X-Forwarded-For itself, so the connection's address is used."""
         if os.environ.get("VERCEL"):
             forwarded = request.headers.get("x-vercel-forwarded-for") or request.headers.get("x-forwarded-for", "")
             if forwarded.strip():
-                return forwarded.split(",")[0].strip()[:64]
-        return request.client.host if request.client else "unknown"
+                return visitor_key(forwarded.split(",")[0].strip()[:64])
+        return visitor_key(request.client.host if request.client else "unknown")
 
     async def body(request: Request) -> dict[str, Any]:
         declared = request.headers.get("content-length", "")
