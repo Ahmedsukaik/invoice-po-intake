@@ -121,8 +121,12 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
         ui.on_screen(page.locator(".paper-pane .stamp", has_text="Locked"))
         ui.on_screen(page.locator(".paper-pane .pen-ring"))
     assert page.locator(".btn-locked").is_disabled()
+    ui.on_screen(page.locator(".lockbox .crop-img"))  # the IBAN line, cut from the page, readable at any size
+    assert "IBAN: GB40 DEMO 4000 9999 9999 99" in (page.locator(".lockbox .crop").get_attribute("aria-label") or "")
     ui.tap(page.locator("[data-reject]"))
     assert "Calling Cobalt" in page.locator("textarea[data-reason]").input_value()  # a reason, ready to send
+    reason, send = page.locator("textarea[data-reason]").bounding_box(), page.locator("[data-reject]").bounding_box()
+    assert reason and send and reason["y"] + reason["height"] <= send["y"]  # the box comes before the button
     ui.tap(page.get_by_role("button", name="Send rejection"))
     ui.title("Rejected, and it never reaches the export.")
     ui.tap(page.get_by_role("button", name="Next: an invoice over its order"))
@@ -130,6 +134,9 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
     ui.title("More than was ordered.")                                 # 4
     ui.tap(ui.button("Bring in invoice 06"))
     ui.title("Tick each finding, say why, then approve.")
+    assert page.locator(".signoff .crop").count() == 2  # line 1 and the subtotal, as on the page
+    widths = page.locator(".signoff .crop-img").evaluate_all("els => els.map((e) => e.getBoundingClientRect().width)")
+    assert len(widths) >= 3 and max(widths) <= 330  # the long line comes in pieces, none shrunk below reading size
     for _ in range(2):
         tick = page.locator(".tick-row.ring")
         ui.tap(tick)
@@ -143,8 +150,8 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
 
     ui.title("A layout the rules have never seen.")                   # 5
     ui.tap(ui.button("Bring in invoice 10"))
-    ui.title("Unknown layout: it goes to a person.")
-    assert "not switched on" in page.evaluate("document.body.innerText")  # why, in the story or the review
+    ui.title("Unknown layout: held for a person, never guessed.")
+    assert "off in this demo" not in page.evaluate("document.body.innerText")  # said once, in the cost card
     if width < 900:
         ui.on_screen(page.locator(".typebox"))
     else:
@@ -153,14 +160,20 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
 
     ui.title("Export what was approved.")                             # 6
     ui.tap(page.locator("[data-export].ring"))
-    ui.title("What you just did, all logged.")
+    ui.title("1 approved for payment, 1 bank change stopped, 1 overrun signed off, 1 held for a person.")
+    ui.on_screen(page.locator(".story-note"))
     ui.on_screen(page.locator(".file-chip", has_text="invoices.csv"))
+    assert page.locator(".export-card .btn", has_text="Nothing left to export").is_disabled()
+    assert "The AI reader is off in this demo right now" in page.locator(".cost-card").inner_text()
     audit = page.locator(".audit").inner_text()
     assert "Tried to approve" not in audit and "Rejected it" in audit and "Exported 2 documents" in audit
     ui.tap(page.get_by_role("button", name="Try it yourself"))
     page.locator(".story-title", has_text="Bring in any sample").wait_for()
     ui.tap(page.locator("#story [data-add='05']"))  # free use: the story offers the next samples to try
     page.locator(".doc-vendor", has_text="Acme").wait_for()
+    assert page.locator("#story .tried", has_text="05, a duplicate").count() == 1  # tried: ticked, not crossed out
+    if width < 900:
+        assert page.locator("#review-pane").evaluate("el => el.scrollTop") == 0  # a new document opens at its top
     ui.close()
 
 
@@ -170,8 +183,59 @@ def test_no_jargon_on_the_way(browser, site):
     ui.button("Bring in invoice 01").click()
     ui.title("Read, checked and matched")
     visible = ui.page.evaluate("document.body.innerText").lower()
-    for word in ("token", "sha-256", "doc_01", "fingerprint", "needs_review", "http"):
+    for word in ("token", "sha-256", "doc_01", "fingerprint", "needs_review", "http", "vendor master", "rules reader",
+                 "four eyes", "four-eyes", "2-way", "ocr"):
         assert word not in visible, word
+    ui.close()
+
+
+def test_plain_words_on_the_locked_and_the_duplicate_invoice(browser, site):
+    ui = Page(browser, site)
+    page = ui.page
+    page.get_by_role("button", name="Skip to free use").click()
+    page.locator(".add-row[data-add='04']").click()
+    lock = page.locator(".lockbox")
+    lock.wait_for()
+    assert "The IBAN on this invoice is not the one on file for Cobalt. Call Cobalt on the number on file" in lock.inner_text()
+    assert "Nobody can approve this. Reject it." in lock.inner_text()
+    page.locator(".add-row[data-add='01']").click()
+    page.locator("[data-approve]").click()
+    page.locator(".decided").wait_for()
+    page.locator(".add-row[data-add='05']").click()
+    text = page.locator(".lockbox").inner_text()
+    assert "already approved as invoice 01" in text and "doc_01" not in text and "vendor master" not in text
+    ui.close()
+
+
+def test_on_a_touch_screen_one_tap_on_a_value_shows_its_line(browser, site):
+    ui = Page(browser, site, 390, 844)
+    page = ui.page
+    assert page.evaluate("matchMedia('(hover: none)').matches")
+    ui.button("Start the demo").tap()
+    ui.button("Bring in invoice 01").tap()
+    ui.title("Read, checked and matched")
+    assert "Every value in Review came from the line marked on the page. Tap one" in page.locator("#story").inner_text()
+    page.locator(".switch-row [data-pane='review']").tap()
+    row = page.locator(".f-row[data-key='total']")
+    row.scroll_into_view_if_needed()
+    box = row.bounding_box()
+    assert box
+    page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.locator(".paper-pane").wait_for(state="visible")
+    active = page.locator(".mark.active")
+    assert active.count() == 1 and "total" in (active.get_attribute("data-mark") or "")
+    ui.close()
+
+
+def test_step_1_points_at_the_total_then_the_po_number(browser, site):
+    ui = Page(browser, site)
+    ui.button("Start the demo").click()
+    ui.page.mouse.move(5, 5)
+    ui.button("Bring in invoice 01").click()
+    ui.title("Read, checked and matched")
+    ui.page.mouse.move(5, 5)
+    assert "total" in (ui.page.locator(".mark.active").get_attribute("data-mark") or "")
+    ui.page.locator(".mark.active[data-mark~='po_number']").wait_for(timeout=4000)
     ui.close()
 
 
@@ -278,7 +342,7 @@ def test_with_the_ai_reader_sample_10_is_read_with_source_lines_and_costed(brows
         assert "$0.0008" in page.locator(".ai-box").inner_text()
         page.get_by_role("button", name="Next: export and audit trail").click()
         page.locator("[data-export]").click()
-        ui.title("What you just did")
+        ui.title("1 read by AI")
         figures = page.locator(".story-figures").inner_text()
         assert "$0.0008" in figures and "$0.76" in figures
         assert len(api.requests) == 1

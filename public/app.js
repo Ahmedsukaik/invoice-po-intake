@@ -12,11 +12,12 @@
   const squash = (t) => String(t || "").replace(/\s+/g, "").toLowerCase();
   const usd = (n) => "$" + Number(n || 0).toFixed(4);
   const isPhone = () => window.matchMedia("(max-width: 900px)").matches;
+  const canHover = () => window.matchMedia("(hover: hover)").matches;  // a mouse: hover shows a line; else a tap does
   const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const STEPS = 6;
   const STORY = { 1: "01", 3: "04", 4: "06", 5: "10" };      // the sample each step brings in
   const STORY_DOC = { 1: "01", 2: "01", 3: "04", 4: "06", 5: "10" };  // the document each step is about
-  const REJECT_04 = "New bank details on the invoice. Calling Cobalt on the number in the vendor master.";
+  const REJECT_04 = "New bank details on the invoice. Calling Cobalt on the number on file.";
   const NOTE_06 = "Buyer agreed the extra 40 plates by phone; a new PO follows.";
   const AI_WORDS = {
     off: "You switched the AI reader off.",
@@ -35,7 +36,7 @@
   const S = {
     config: null, previews: {}, session: null, view: null, step: 0, selected: null, reviewer: "sara", ai: true,
     busy: false, wait: "", main: "doc", pane: "review", acks: {}, notes: {}, reasons: {}, rejecting: null, errors: {},
-    typing: null, typed: {}, hover: null, stamps: {}, keyboard: false, flash: null,
+    typing: null, typed: {}, hover: null, stamps: {}, keyboard: false, flash: null, payoff: null,
   };
 
   // ------------------------------------------------------------------ small helpers
@@ -133,17 +134,17 @@
       case 0: return {
         main: `<span class="eyebrow">Live demo on fictional documents</span>
           <h2 class="story-headline" id="story-title">Invoices read, checked against the PO, and approved by a person.</h2>
-          <p class="story-sub">Six short steps on real demo PDFs. You are the reviewer. About two minutes.</p>
+          <p class="story-sub">Six short steps on sample invoices. You are the reviewer. About two minutes.</p>
           <ul class="hero-points"><li>${icon("check")}Each value linked to the line it was read from</li>
             <li>${icon("check")}New bank details cannot be approved</li><li>${icon("check")}Nothing is exported until a person approves it</li></ul>
-          <p class="story-fine">The demo PDFs are read with fixed rules that know one layout. Other layouts need the AI reader. Without it, they go to a person. The date is fixed at 11 October 2026.</p>`,
+          <p class="story-fine">Sample PDFs share one layout. Other layouts go to the AI reader or to a person. No uploads: only the ten sample PDFs. The date is fixed at 11 October 2026.</p>`,
         actions: `${primary("start", "Start the demo")}<button type="button" class="btn-link" data-go="skip">Skip to free use</button>`,
         focus: "review" };
       case 1: {
         const d = byKey("01");
         if (d) return {
           main: head(1, "Read, checked and matched to PO-2026-0101.") +
-            text(`Every value on the right came from the line marked on the page.${isPhone() ? " Tap one to see where." : " Hover one to see where."} <b>The checks found nothing wrong</b>, and the purchase order covers the full amount.`),
+            text(`Every value ${isPhone() ? "in Review" : "on the right"} came from the line marked on the page. ${canHover() ? "Hover" : "Tap"} one to see where. <b>The checks found nothing wrong</b>, and the purchase order covers the full amount.`),
           actions: primary("next", "Next: your turn"), focus: "paper" };
         return {
           main: head(1, "An invoice arrives.") + text("Acme emails invoice INV-A-1001. The clerk drops the PDF into the inbox. Watch what happens to it.") + wait,
@@ -171,7 +172,7 @@
           actions: primary("next", "Next: an invoice over its order"), focus: "paper" };
         return {
           main: head(3, "New bank details: Approve is locked.") +
-            text(`The IBAN on the PDF is not the one in the vendor master, so <b>nobody can approve it here</b>. A real bank change goes through the vendor master's own process. Reject it.`),
+            text(`The IBAN on the PDF is not the one on file, so <b>nobody can approve it</b>. A real bank change is made on the supplier's file, through its own checks. Reject it.`),
           actions: isPhone() && S.pane !== "review" ? primary("show-review", "Open the review") : "", focus: "review" };
       }
       case 4: {
@@ -181,7 +182,7 @@
           actions: S.busy ? "" : primary("bring", "Bring in invoice 06"), focus: "paper" };
         if (decided(d)) return {
           main: head(4, d.status === "rejected" ? "Rejected. That works too." : "Approved, with two findings signed off.") +
-            text("If a number on an invoice changes later, old ticks stop counting and it must be checked again. The note travels with the invoice to the export."),
+            text("Each tick names one finding: had a number changed before approval, the tick would have stopped counting. Your note goes with the invoice to the export."),
           actions: primary("next", "Next: a layout it has never seen"), focus: "paper" };
         return {
           main: head(4, "Tick each finding, say why, then approve.") +
@@ -194,40 +195,59 @@
         if (!d) return {
           main: head(5, "A layout the rules have never seen.") + text(`Brightline sends its own invoice design. ${live
             ? "The AI reader, Claude Haiku 5.5, reads it."
-            : "The demo PDFs are read with fixed rules that know one layout. Watch where this one goes."}`) + wait,
+            : "The sample PDFs share one layout, and this is another. Watch where it goes."}`) + wait,
           actions: S.busy ? "" : primary("bring", "Bring in invoice 10"), focus: "paper" };
         const ok = d.ai && d.ai.status === "ok";
         return {
           main: ok ? head(5, "Read by AI, each value with its source line.") +
               text("Claude copied every value with the line it came from. The code parsed the amounts and ran the same checks as on any invoice. A person still approves.")
-            : head(5, "Unknown layout: it goes to a person.") +
-              text(`Other layouts need the AI reader. Without it, they go to a person, who types the values in. ${esc((d.ai && AI_WORDS[d.ai.status]) || "")}`),
+            : head(5, "Unknown layout: held for a person, never guessed.") +
+              text("The rules know one layout. Anything else waits for a person to type it in, and a second person approves."),
           actions: primary("next", "Next: export and audit trail"), focus: ok ? "paper" : "review" };
       }
       case 6: {
-        const exported = (v?.exports || []).length > 0;
+        const exported = (v?.exports || []).length > 0 || !(v?.counts?.approved);
         if (!exported) return {
-          main: head(6, "Export what was approved.") + text("Approved invoices go to accounting as CSV and JSON. <b>Export creates files in your browser.</b>"),
+          main: head(6, "Export what was approved.") + text("Approved invoices go to accounting as CSV and JSON. <b>You get the files as downloads; nothing stays on the server.</b>"),
           actions: isPhone() && S.pane !== "books" ? primary("show-books", "Open the export") : "", focus: "books" };
         const m = v.metrics || {};
         const figures = m.ai_reads ? `<div class="story-figures"><div><span>AI reading of invoice 10</span><strong>${usd(m.cost_usd)}</strong></div>
             <div><span>1,000 invoices like it</span><strong>$${(m.cost_usd * 1000).toFixed(2)}</strong></div></div>`
-          : `<p class="story-text">This run used the rules reader only, so it cost nothing. The AI reader is estimated at about $0.001 to $0.003 an invoice, before any measurement on real documents.</p>`;
+          : `<p class="story-text">This run read every invoice automatically, without AI, so it cost nothing. The AI reader is estimated at about $0.001 to $0.003 an invoice, before any measurement on real documents.</p>`;
         return {
-          main: head(6, "What you just did, all logged.") + figures + `<ul class="story-list">
+          main: head(6, takeaway()) + figures + `<ul class="story-list">
             <li>${icon("check-circle")}<span>Invoice 01 read, matched to its PO and approved by you</span></li>
             <li>${icon("check-circle")}<span>New bank details locked, then rejected</span></li>
             <li>${icon("check-circle")}<span>Over the PO: approved only with each finding signed off</span></li>
             <li>${icon("check-circle")}<span>An unknown layout ${byKey("10")?.ai?.status === "ok" ? "read by AI, with source lines" : "sent to a person"}</span></li>
             <li>${icon("check-circle")}<span>Exported once as CSV and JSON; every step in the audit trail</span></li></ul>
-            <p class="story-note">Your version reads your suppliers' PDFs and posts to your accounting system.</p>`,
+            <p class="story-note">A version for your company would read your suppliers' layouts with the AI reader and send the export to your accounting system. That connection is built for each system.</p>`,
           actions: `${primary("free", "Try it yourself")}<button type="button" class="btn-link" data-go="replay">Replay the demo</button>`, focus: "books" };
       }
-      default: return {
-        main: `<div class="story-kicker"><span>Free use</span></div><h2 class="story-title" id="story-title">Bring in any sample and review it as Sara or Omar.</h2>
-          <p class="story-text">Try <button type="button" class="link" data-add="05">05, a duplicate</button>, <button type="button" class="link" data-add="08">08, a scan</button> (one reviewer types it in, the other approves) and <button type="button" class="link" data-add="09">09, a price above the PO</button>.</p>`,
-        actions: "", focus: "inbox" };
+      default: {
+        const tryIt = (key, label) => byKey(key) ? `<span class="tried">${icon("check", "i i-xs")}${label}</span>`
+          : `<button type="button" class="link" data-add="${key}">${label}</button>`;
+        const all = ["05", "08", "09"].every((k) => byKey(k));
+        return {
+          main: `<div class="story-kicker"><span>Free use</span></div><h2 class="story-title" id="story-title">Bring in any sample and review it as Sara or Omar.</h2>
+          <p class="story-text">${all ? `You have tried all three. <button type="button" class="link" data-go="books">Export them</button>, or <button type="button" class="link" data-go="replay">replay the demo</button>.`
+            : `Try ${tryIt("05", "05, a duplicate")}, ${tryIt("08", "08, a scan")} (one reviewer types it in, a second person approves) and ${tryIt("09", "09, a price above the PO")}.`}</p>`,
+          actions: "", focus: "inbox" };
+      }
     }
+  }
+
+  // Step 6's title says what really happened to the story's four invoices.
+  function takeaway() {
+    const d01 = byKey("01"), d04 = byKey("04"), d06 = byKey("06"), d10 = byKey("10");
+    const done = (d) => d && ["approved", "exporting", "exported"].includes(d.status);
+    const parts = [];
+    if (d01) parts.push(done(d01) ? "1 approved for payment" : d01.status === "rejected" ? "1 rejected" : "1 still waiting");
+    if (d04) parts.push(d04.status === "rejected" ? "1 bank change stopped" : "1 bank change locked");
+    if (d06) parts.push(done(d06) ? "1 overrun signed off" : d06.status === "rejected" ? "1 overrun rejected" : "1 overrun waiting");
+    if (d10) parts.push(d10.ai && d10.ai.status === "ok" ? (done(d10) ? "1 read by AI and approved" : "1 read by AI")
+      : "1 held for a person");
+    return parts.length ? parts.join(", ") + "." : "Nothing came in during this run.";
   }
 
   function renderStory() {
@@ -289,12 +309,21 @@
         S.main = "doc"; render();
         if (isPhone()) setPane(c.focus, true);
         revealTarget();
+        if (S.step === 1 && byKey("01")) payoff();
       } else if (what === "next") setStep(S.step + 1);
       else if (what === "show-review") { setPane("review", true); renderStory(); revealTarget(); }
       else if (what === "show-books") { setPane("books", true); renderStory(); revealTarget(); }
       else if (what === "books") { S.main = "books"; save(); render(); if (isPhone()) setPane("books", true); }
       else if (what === "back") { S.main = "doc"; save(); render(); if (isPhone()) setPane("inbox", true); }
     } catch (err) { toast(err.message); }
+  }
+
+  // Step 1: show, without being asked, where two values came from: the total, then the PO number.
+  function payoff() {
+    if (reduced()) return;
+    clearTimeout(S.payoff);
+    setHover("total");
+    S.payoff = setTimeout(() => { if (S.step === 1 && S.hover === "total") setHover("po_number"); }, 1600);
   }
 
   // ------------------------------------------------------------------ the paper sheet
@@ -354,9 +383,11 @@
     if (!p) return `<div class="sheet sheet-missing"><p>No preview for this file.</p></div>`;
     const marks = art ? marksFor(d).filter((m) => m.keys.some((k) => ["invoice_number", "po_number", "total", "line:0", "line:1", "subtotal"].includes(k))) : marksFor(d);
     const W = p.width, H = p.height;
+    const pad = 14 * (W / 620);  // about 14 screen pixels around the line, at the size the sheet usually shows
     const pen = marks.filter((m) => m.pen).map((m) => {
       const [x0, y0, x1, y1] = m.box;
-      return `<ellipse class="pen-ring" pathLength="100" cx="${((x0 + x1) / 2) * W}" cy="${((y0 + y1) / 2) * H}" rx="${((x1 - x0) / 2) * W + 22}" ry="${((y1 - y0) / 2) * H + 15}" transform="rotate(-1.5 ${((x0 + x1) / 2) * W} ${((y0 + y1) / 2) * H})"/>`;
+      const x = x0 * W - pad, y = y0 * H - pad, w = (x1 - x0) * W + 2 * pad, h = (y1 - y0) * H + 2 * pad;
+      return `<rect class="pen-ring" pathLength="100" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="${(14 * W / 620).toFixed(1)}" transform="rotate(-1 ${(x + w / 2).toFixed(1)} ${(y + h / 2).toFixed(1)})"/>`;
     }).join("");
     const boxes = marks.map((m) => {
       const [x0, y0, x1, y1] = m.box;
@@ -370,6 +401,36 @@
       <svg class="pen" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${pen}</svg>
       ${art ? `<div class="stamp stamp-green stamp-art" aria-hidden="true"><span class="stamp-word">Approved</span><span class="stamp-meta">Sara · 11 Oct 2026</span></div>` : stampFor(d)}
     </figure>`;
+  }
+  // "On the page:" each line circled in red pen, cut from the page image at a size that can be read.
+  // A line wider than the panel is cut between its printed cells into pieces, stacked, each readable.
+  function onPage(d) {
+    const p = previewFor(d);
+    const pens = p ? marksFor(d).filter((m) => m.pen).slice(0, 3) : [];
+    if (!pens.length) return "";
+    const W = p.width, H = p.height, SCALE = 0.55, PIECE = 290 / (0.55 * W);  // widest piece, as a fraction of the page
+    const pos = (a, f) => (f >= 1 ? 0 : (a / (1 - f)) * 100).toFixed(3);
+    const crops = pens.map((m) => {
+      const [x0, y0, x1, y1] = m.box;
+      const cells = (p.lines[m.i] && p.lines[m.i].cells) || [[x0, x1]];
+      const spans = [];
+      for (const [a, b] of cells) {
+        const last = spans[spans.length - 1];
+        if (last && b - last[0] <= PIECE) last[1] = b; else spans.push([a, b]);
+      }
+      const cy0 = Math.max(0, y0 - 0.016), cy1 = Math.min(1, y1 + 0.016), fh = cy1 - cy0;
+      const pieces = spans.map(([a, b], k) => {
+        const px0 = Math.max(0, a - 0.022), px1 = Math.min(1, b + 0.022), pw = px1 - px0;
+        const img = `width:min(100%, ${Math.round(pw * W * SCALE)}px);aspect-ratio:${((pw * W) / (fh * H)).toFixed(4)};background-image:url('${esc(p.png)}');background-size:${(100 / pw).toFixed(3)}% auto;background-position:${pos(px0, pw)}% ${pos(cy0, fh)}%`;
+        const ring = `left:${(((a - px0) / pw) * 100).toFixed(2)}%;width:${(((b - a) / pw) * 100).toFixed(2)}%;top:${(((y0 - cy0) / fh) * 100).toFixed(2)}%;height:${(((y1 - y0) / fh) * 100).toFixed(2)}%`;
+        const open = (k > 0 ? " open-l" : "") + (k < spans.length - 1 ? " open-r" : "");
+        return `<div class="crop-img" style="${img}"><span class="crop-ring${open}" style="${ring}"></span></div>`;
+      }).join("");
+      const said = p.lines[m.i] ? p.lines[m.i].text : "";
+      return `<figure class="crop" role="img" aria-label="${esc(m.labels.join(", "))}, on the page: ${esc(said)}">${pieces}
+        <figcaption>${esc(m.labels.join(", "))}${spans.length > 1 ? " (one line, in pieces)" : ""}</figcaption></figure>`;
+    }).join("");
+    return `<div class="onpage"><span class="onpage-label">On the page:</span>${crops}</div>`;
   }
   function heroArt() {
     const fake = { file: "01_clean_invoice.pdf", vendor: "Acme Demo Components Ltd", waiting: false, findings: [],
@@ -387,7 +448,7 @@
     const s = sample(d.key);
     const caption = d.reader.startsWith("claude") ? "Lines the AI reader quoted, marked on the page."
       : d.reader === "none" ? "A scan: no text to read. A person reads the page."
-      : d.reader === "rules" && d.status === "needs_manual_entry" ? "Not read: the rules reader does not know this layout."
+      : d.reader === "rules" && d.status === "needs_manual_entry" ? "Not read: the rules know one layout, and this is another."
       : "Each line a value was read from, marked on the page.";
     pane.innerHTML = `<div class="desk">
       <div class="sheet-wrap">${sheet(d)}</div>
@@ -426,7 +487,7 @@
   // ------------------------------------------------------------------ the review panel
   function readerBadge(d) {
     if (d.reader.startsWith("claude")) return `<span class="badge badge-ai">${icon("spark", "i i-xs")}Read by AI, Claude Haiku 5.5</span>`;
-    if (d.reader === "rules" && d.status !== "needs_manual_entry") return `<span class="badge">Read by the rules reader</span>`;
+    if (d.reader === "rules" && d.status !== "needs_manual_entry") return `<span class="badge">Read automatically, no AI</span>`;
     return `<span class="badge">${icon("pen", "i i-xs")}${d.corrections.length ? "Typed in by a person" : "Not read: needs a person"}</span>`;
   }
   function findingLine(f, withTick, ticked) {
@@ -439,10 +500,7 @@
     return `<li class="finding ${sev}"><span class="f-mark" aria-hidden="true">${f.severity === "info" ? icon("check", "i i-xs") : icon(f.severity === "warning" ? "alert" : "x", "i i-xs")}</span><span class="f-body">${body}</span></li>`;
   }
   function whyManual(d) {
-    if (d.findings.some((f) => f.code === "reader_unknown_layout")) {
-      const why = d.ai && d.ai.status !== "ok" ? " " + (AI_WORDS[d.ai.status] || "") : "";
-      return "The rules reader knows only the demo layout, and this is another one." + why;
-    }
+    if (d.findings.some((f) => f.code === "reader_unknown_layout")) return "The rules know one layout, and this is another.";
     return d.manual_reason || "It could not be read.";
   }
   function reviewerSwitch(d) {
@@ -480,8 +538,8 @@
       return `<section class="decision typebox" aria-label="Decision">
         <div class="decision-head">${icon("pen")}<b>Needs typing in</b></div>
         <p>${esc(whyManual(d))} A person types the values in from the page; another person approves.</p>
-        ${reviewerSwitch(d)}${errorLine}
-        <div class="decision-actions">${rejectBtn}<button type="button" class="btn btn-primary" data-type="${esc(d.id)}">${icon("pen")}Type it in</button></div>${rejectForm(d)}</section>`;
+        ${reviewerSwitch(d)}${errorLine}${rejectForm(d)}
+        <div class="decision-actions">${rejectBtn}<button type="button" class="btn btn-primary" data-type="${esc(d.id)}">${icon("pen")}Type it in</button></div></section>`;
     }
     if (S.typing === d.id) return typeForm(d);
     if (errors.length) {
@@ -489,10 +547,11 @@
       return `<section class="decision lockbox" aria-label="Decision">
         <div class="decision-head">${icon("lock")}<b>Approve is locked</b>${stampFor(d, true)}</div>
         <ul class="findings">${[...errors, ...blocking].map((f) => findingLine(f, false)).join("")}</ul>
-        <p class="lock-note">${hard ? "Nobody can approve this here, whoever is reviewing. Reject it, with a reason." : "Fix the typed values first."}</p>
-        ${reviewerSwitch(d)}${errorLine}
+        ${onPage(d)}
+        <p class="lock-note">${hard ? "Nobody can approve this. Reject it." : "Fix the typed values first."}</p>
+        ${reviewerSwitch(d)}${errorLine}${rejectForm(d)}
         <div class="decision-actions">${rejectBtn}${!hard && d.corrections.length ? `<button type="button" class="btn btn-secondary" data-type="${esc(d.id)}">${icon("pen")}Change typed values</button>` : ""}
-          <button type="button" class="btn btn-primary btn-locked" disabled aria-disabled="true">${icon("lock", "i i-sm")}Approve</button></div>${rejectForm(d)}</section>`;
+          <button type="button" class="btn btn-primary btn-locked" disabled aria-disabled="true">${icon("lock", "i i-sm")}Approve</button></div></section>`;
     }
     const acks = S.acks[d.id] || [];
     // In step 4 the highlight walks through what is left to do: each tick, the note, then Approve.
@@ -501,18 +560,18 @@
     const noteShort = (S.notes[d.id] || "").trim().length < 10;
     const sign = blocking.length ? `<p class="decision-lead">Tick each finding you checked, then say why it is fine to pay.</p>
       <ul class="findings">${blocking.map((f) => findingLine(f, true, acks.includes(f.id)).replace('<label class="tick-row">', `<label class="tick-row${ring(nextTick && f.id === nextTick.id)}">`)).join("")}</ul>
+      ${onPage(d)}
       <label class="field-label" for="note-${esc(d.id)}">Why it is fine <span class="muted">(10 characters or more; it goes with the invoice)</span></label>
       <textarea class="input" id="note-${esc(d.id)}" data-note="${esc(d.id)}" rows="2" maxlength="500" placeholder="For example: buyer agreed the extra quantity by phone.">${esc(S.notes[d.id] || "")}</textarea>
       ${inStory() && S.step === 4 && !(S.notes[d.id] || "").trim() ? `<button type="button" class="chip${ring(guide && !nextTick && noteShort)}" data-suggest="${esc(d.id)}">${icon("pen", "i i-xs")}Use: “${esc(NOTE_06)}”</button>` : ""}`
       : `<p class="decision-lead">${icon("check-circle", "i i-sm ok")}No problems found. ${esc((d.findings.find((f) => f.code === "po_matched" || f.code === "po_in_register") || {}).message || "")}</p>`;
-    const four = blockedForMe ? `<p class="four-eyes">${icon("user", "i i-sm")}<span>You typed in values on this document, so another reviewer must approve it (four eyes). <button type="button" class="link" data-reviewer="${other(me)}">Switch to ${esc(reviewerName(other(me)))}</button></span></p>` : "";
+    const four = blockedForMe ? `<p class="four-eyes">${icon("user", "i i-sm")}<span>You typed in values on this document, so a second person must approve it. <button type="button" class="link" data-reviewer="${other(me)}">Switch to ${esc(reviewerName(other(me)))}</button></span></p>` : "";
     const ready = !blocking.length || (blocking.every((f) => acks.includes(f.id)) && (S.notes[d.id] || "").trim().length >= 10);
     const approveRing = storyRing && (S.step === 2 || (S.step === 4 && ready));
     return `<section class="decision${blocking.length ? " signoff" : " clean"}" aria-label="Decision">
       <div class="decision-head">${blocking.length ? icon("pen") : icon("check-circle")}<b>${blocking.length ? `Sign off ${blocking.length} finding${blocking.length > 1 ? "s" : ""} to approve` : "Ready for a decision"}</b></div>
-      ${sign}${reviewerSwitch(d)}${four}${errorLine}
-      <div class="decision-actions">${rejectBtn}<button type="button" class="btn btn-primary${ring(approveRing)}" data-approve="${esc(d.id)}"${blockedForMe ? " disabled" : ""}>${icon("check")}Approve${inStory() ? "" : " as " + esc(reviewerName(me))}</button></div>
-      ${rejectForm(d)}</section>`;
+      ${sign}${reviewerSwitch(d)}${four}${errorLine}${rejectForm(d)}
+      <div class="decision-actions">${rejectBtn}<button type="button" class="btn btn-primary${ring(approveRing)}" data-approve="${esc(d.id)}"${blockedForMe ? " disabled" : ""}>${icon("check")}Approve${inStory() ? "" : " as " + esc(reviewerName(me))}</button></div></section>`;
   }
   function typeForm(d) {
     const t = S.typed[d.id] || {};
@@ -551,7 +610,7 @@
         <td class="num mono">${esc(l.shown.unit_price || "")}</td><td class="num mono">${esc(l.shown.line_total || "")}</td></tr>`).join("");
     const ai = d.ai && d.ai.status === "ok" ? `<section class="block ai-box"><h3 class="block-title">${icon("spark", "i i-sm")}AI reader</h3>
         <p>Claude Haiku 5.5 read this in ${(d.ai.ms / 1000).toFixed(1)} s: ${Number(d.ai.input_tokens || 0).toLocaleString("en-US")} tokens in, ${Number(d.ai.output_tokens || 0).toLocaleString("en-US")} out, <b>${usd(d.ai.cost_usd)}</b>. Code checked that each quoted line is on the page.</p></section>`
-      : d.ai ? `<section class="block ai-box muted-box"><h3 class="block-title">${icon("spark", "i i-sm")}AI reader</h3><p>${esc(AI_WORDS[d.ai.status] || "")} Layouts the rules do not know go to a person instead.</p></section>` : "";
+      : d.ai && d.ai.status !== "unavailable" ? `<section class="block ai-box muted-box"><h3 class="block-title">${icon("spark", "i i-sm")}AI reader</h3><p>${esc(AI_WORDS[d.ai.status] || "")} So it went to a person.</p></section>` : "";
     const typed = d.corrections.length ? `<p class="typed-by">${icon("pen", "i i-xs")}Typed in by ${esc(d.corrections[0].by)} at ${esc(d.corrections[0].at)}: ${d.corrections.length} value${d.corrections.length > 1 ? "s" : ""}.</p>` : "";
     pane.innerHTML = `<header class="doc-head">
         <div class="doc-kicker"><span class="q-key mono">${esc(d.key || "")}</span><span>${docType}</span><span class="mono doc-file">${esc(d.file)}</span></div>
@@ -563,7 +622,7 @@
         <div class="doc-badges">${readerBadge(d)}${typed}</div>
       </header>
       ${decision(d)}
-      ${shown.length ? `<section class="block"><h3 class="block-title">Read from the PDF</h3><p class="block-hint">${isPhone() ? "Tap a value to see the line it came from." : "Hover a value to see the line it came from on the page."}</p><div class="fields">${fieldRows}</div></section>` : ""}
+      ${shown.length ? `<section class="block"><h3 class="block-title">Read from the PDF</h3><p class="block-hint">${canHover() ? "Hover a value to see the line it came from on the page." : "Tap a value to see the line it came from."}</p><div class="fields">${fieldRows}</div></section>` : ""}
       ${d.lines.length ? `<section class="block"><h3 class="block-title">Lines</h3><div class="table-wrap"><table class="lines-table"><thead><tr><th>Item</th><th>Description</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>${lineRows}</tbody></table></div></section>` : ""}
       ${notes.length ? `<section class="block"><h3 class="block-title">Also noted</h3><ul class="findings">${notes.map((f) => findingLine(f, false)).join("")}</ul></section>` : ""}
       ${ai}`;
@@ -574,6 +633,8 @@
     const pane = $("#books-pane"), v = S.view || { exports: [], audit: [], counts: {}, metrics: {} };
     const n = v.counts.approved || 0, m = v.metrics || {};
     const storyRing = S.step === 6 && !(v.exports || []).length ? " ring" : "";
+    const exportButton = n ? `<button type="button" class="btn btn-primary${storyRing}" data-export="1">${icon("download")}Export ${n} approved</button>`
+      : `<button type="button" class="btn btn-secondary" disabled>${(v.exports || []).length ? "Nothing left to export" : "Nothing approved yet"}</button>`;
     const batches = (v.exports || []).slice().reverse().map((b, bi) => {
       const idx = v.exports.length - 1 - bi;
       const inv = b.files.find((f) => f.name === "invoices.csv");
@@ -587,16 +648,16 @@
     const audit = (v.audit || []).map((a) => `<li class="${a.outcome === "refused" ? "refused" : ""}"><time class="mono">${esc(a.time)}</time>
       <span class="who">${esc(a.who)}</span><span class="what">${esc(a.text)}${a.doc_label ? ` <span class="mono doc-ref">${esc(a.doc_label)}</span>` : ""}</span></li>`).join("");
     const cost = m.ai_reads ? `<div class="cost-figures"><div><span>AI reads</span><strong>${m.ai_reads}</strong></div><div><span>Tokens in / out</span><strong class="mono">${Number(m.input_tokens).toLocaleString("en-US")} / ${Number(m.output_tokens).toLocaleString("en-US")}</strong></div><div><span>Cost</span><strong>${usd(m.cost_usd)}</strong></div></div>`
-      : `<p>No AI reading in this session, so no AI cost. The demo PDFs are read with fixed rules; only a layout the rules do not know uses the AI reader.</p>`;
+      : `<p>No AI reading in this session, so no AI cost. The sample PDFs are read with fixed rules; only a layout the rules do not know uses the AI reader.</p>`;
     const toggle = S.config?.live ? `<div class="who-row"><span>Unknown layouts</span><div class="seg" role="group" aria-label="How unknown layouts are read">
         <button type="button" data-ai="on" aria-pressed="${S.ai}">${icon("spark", "i i-xs")}AI reader</button><button type="button" data-ai="off" aria-pressed="${!S.ai}">Rules only</button></div></div>`
-      : `<p class="muted">The AI reader is not switched on in this demo right now. It runs once the demo is deployed with its key.</p>`;
+      : `<p class="muted">The AI reader is off in this demo right now, so layouts the rules do not know go to a person.</p>`;
     pane.innerHTML = `<div class="books">
       <button type="button" class="btn-link back-link" data-go="back">${icon("chev-left", "i i-sm")}Back to the inbox</button>
       <section class="card export-card" aria-labelledby="export-title">
         <h2 class="card-title" id="export-title">Export to accounting</h2>
-        <p>${n ? `<b>${n} approved document${n > 1 ? "s" : ""}</b> waiting.` : "Nothing approved is waiting."} The export writes CSV and JSON for an accounting import, each document at most once. <b>Export creates files in your browser.</b></p>
-        <button type="button" class="btn btn-primary${storyRing}" data-export="1">${icon("download")}${n ? `Export ${n} approved` : "Run the export"}</button>
+        <p>${n ? `<b>${n} approved document${n > 1 ? "s" : ""}</b> waiting.` : "Nothing approved is waiting."} The product's exporter writes CSV and JSON for an accounting import, each document at most once. <b>You get the files as downloads; nothing stays on the server.</b></p>
+        ${exportButton}
         ${batches}
       </section>
       <section class="card audit-card" aria-labelledby="audit-title">
@@ -680,7 +741,12 @@
     if (inStory()) { if (isPhone()) setPane(storyFocus(), true); renderStory(); revealStory(); }
   }
   async function rejectDoc(id) {
-    if (S.rejecting !== id) { S.rejecting = id; render(); $(`#reason-${id}`)?.focus(); return; }
+    if (S.rejecting !== id) {  // the first click opens the reason box above the button; both stay in view
+      S.rejecting = id; render();
+      $(`[data-reject="${id}"]`)?.scrollIntoView({ block: "nearest" });
+      $(`#reason-${id}`)?.focus({ preventScroll: true });
+      return;
+    }
     const reason = (S.reasons[id] || "").trim();
     delete S.errors["reject:" + id];
     if (reason.length < 3) { S.errors["reject:" + id] = "Write a short reason first."; render(); $(`#reason-${id}`)?.focus(); return; }
@@ -702,7 +768,10 @@
     if (!data) return;
     if (!data.result.ok) { S.errors[id] = data.result.message; render(); return; }
     S.typing = null; delete S.typed[id]; render();
-    announce("Saved. Another reviewer approves it.");
+    announce("Saved. A second person approves it.");
+    const pane = $("#review-pane"), note = $(".four-eyes");
+    pane.scrollTop = 0;
+    if (note) note.scrollIntoView({ block: "nearest" });
   }
   function revealStory() {
     if (isPhone()) $("#story")?.scrollIntoView({ block: "nearest" });
@@ -717,8 +786,8 @@
       if (!t || t.disabled) return;
       const ds = t.dataset;
       if (ds.go) go(ds.go);
-      else if (ds.doc) { select(ds.doc); render(); if (isPhone()) setPane("review", true); }
-      else if (ds.add) { (async () => { await addSample(ds.add); render(); if (isPhone()) setPane("review", true); })(); }
+      else if (ds.doc) { select(ds.doc); render(); if (isPhone()) setPane("review", true); $("#review-pane").scrollTop = 0; }
+      else if (ds.add) { (async () => { await addSample(ds.add); render(); if (isPhone()) setPane("review", true); $("#review-pane").scrollTop = 0; })(); }
       else if (ds.approve) approveDoc(ds.approve);
       else if (ds.reject) rejectDoc(ds.reject);
       else if (ds.type) { S.typing = ds.type; render(); $("[data-tf]")?.focus(); }
@@ -729,12 +798,22 @@
       else if (ds.suggest) { S.notes[ds.suggest] = NOTE_06; render(); revealTarget(); }
       else if (ds.reviewer) { S.reviewer = ds.reviewer; delete S.errors[S.selected]; save(); render(); }
       else if (ds.ai) { S.ai = ds.ai === "on"; save(); renderBooks(); }
-      else if (ds.export) { (async () => { const data = await act({ type: "export" }, "Exporting."); if (data) { if (!inStory()) toast(data.result.message); announce(data.result.message); if (inStory()) revealStory(); } })(); }
+      else if (ds.export) {
+        (async () => {
+          const data = await act({ type: "export" }, "Exporting.");
+          if (!data) return;
+          if (!inStory()) toast(data.result.message);
+          announce(data.result.message);
+          $(".batch .files")?.scrollIntoView({ block: "nearest" });  // the files just made
+          if (inStory()) revealStory();
+        })();
+      }
       else if (ds.download) download(ds.download);
       else if (ds.pane) { setPane(ds.pane, false); if (ds.pane !== "books" && S.main === "books" && ds.pane !== "inbox") { S.main = "doc"; render(); } }
       else if (ds.key && t.closest("#review-pane")) {
-        setHover(S.hover === ds.key ? null : ds.key);
-        if (isPhone() && S.hover) { setPane("paper", true); flashMark(ds.key); }
+        clearTimeout(S.payoff);
+        setHover(ds.key);  // a tap or a click marks the line; it never clears it (a mouse clears it on leaving)
+        if (isPhone()) { setPane("paper", true); flashMark(ds.key); }
       }
     });
     document.addEventListener("change", (e) => {
@@ -764,12 +843,12 @@
       if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); row.click(); }
     });
     const review = $("#review-pane");
-    review.addEventListener("mouseover", (e) => { const r = e.target.closest("[data-key]"); if (r && !isPhone()) setHover(r.dataset.key); });
-    review.addEventListener("mouseleave", () => { if (!isPhone()) setHover(null); });
-    review.addEventListener("focusin", (e) => { const r = e.target.closest("[data-key]"); if (r) setHover(r.dataset.key); });
+    review.addEventListener("mouseover", (e) => { const r = e.target.closest("[data-key]"); if (r && canHover()) { clearTimeout(S.payoff); setHover(r.dataset.key); } });
+    review.addEventListener("mouseleave", () => { if (canHover()) setHover(null); });
+    review.addEventListener("focusin", (e) => { const r = e.target.closest("[data-key]"); if (r && S.keyboard) setHover(r.dataset.key); });
     $("#paper-pane").addEventListener("mouseover", (e) => {
       const m = e.target.closest(".mark");
-      if (m && !isPhone()) setHover(m.dataset.mark.split(" ")[0]);
+      if (m && canHover()) setHover(m.dataset.mark.split(" ")[0]);
     });
     $("#replay").addEventListener("click", () => go("replay"));
     let resizeTimer = null;

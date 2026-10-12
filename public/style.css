@@ -55,7 +55,9 @@ body.busy { cursor: progress; }
 .btn-link, .link { color: var(--green-text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .btn-link { display: inline-flex; align-items: center; gap: var(--space-1-5); min-height: var(--control); padding: 0 var(--space-2); font-size: var(--text-sm); }
 .link { display: inline; font-size: inherit; }
-.link:disabled { color: var(--ink-3); text-decoration: line-through; }
+.link:disabled { color: var(--ink-3); }
+.tried { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-2); font-weight: 600; }
+.tried .i { color: var(--green-text); }
 
 .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-md); background: var(--surface-sunk); border: 1px solid var(--rule); }
 .seg button {
@@ -173,7 +175,7 @@ body[data-step="0"] .story-art { display: grid; align-self: center; justify-self
 .hero-sheet {
   container-type: size; height: min(70vh, 620px); width: 100%; display: grid; place-items: center; border-radius: var(--radius-lg);
   background-color: var(--desk);
-  background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-gap) - 1px), var(--rule) calc(var(--rule-gap) - 1px) var(--rule-gap));
+  background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-gap) - 1px), var(--desk-rule) calc(var(--rule-gap) - 1px) var(--rule-gap));
   padding: 6%; box-shadow: inset 0 0 0 1px var(--rule);
 }
 .hero-sheet .sheet { transform: rotate(1.4deg); }
@@ -231,7 +233,7 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
 /* ---------- the desk and the sheet of paper */
 .paper-pane {
   background-color: var(--desk); overflow: hidden;
-  background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-gap) - 1px), var(--rule) calc(var(--rule-gap) - 1px) var(--rule-gap));
+  background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-gap) - 1px), var(--desk-rule) calc(var(--rule-gap) - 1px) var(--rule-gap));
 }
 .desk { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--space-2); padding: var(--space-5) var(--space-6) var(--space-3); }
 .sheet-wrap { min-height: 0; container-type: size; display: grid; place-items: center; }
@@ -244,11 +246,11 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
 .marks { position: absolute; inset: 0; }
 .mark {
   position: absolute; margin: -0.55cqw -0.9cqw; padding: 0.55cqw 0.9cqw; box-sizing: content-box;
-  background: rgba(31, 92, 70, 0.11); border-radius: 3px; mix-blend-mode: multiply;
+  background: rgba(31, 92, 70, 0.18); box-shadow: inset 2px 0 0 #1F5C46; border-radius: 3px; mix-blend-mode: multiply;
   transition: background var(--base), box-shadow var(--base);
 }
 .mark.active { background: rgba(31, 92, 70, 0.24); box-shadow: 0 0 0 2px #1F5C46; }
-.mark.is-pen { background: rgba(180, 35, 24, 0.07); }
+.mark.is-pen { background: rgba(180, 35, 24, 0.07); box-shadow: inset 2px 0 0 #B42318; }
 .mark.is-pen.active { background: rgba(180, 35, 24, 0.14); box-shadow: 0 0 0 2px #B42318; }
 .pen { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .pen-ring { fill: none; stroke: #B42318; stroke-width: 2.4px; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-dasharray: 100 100; stroke-dashoffset: 0; animation: draw 0.65s var(--ease-out) 0.15s both; opacity: 0.92; }
@@ -348,6 +350,15 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
 .tick-row input:checked ~ .f-body .f-label { color: var(--green-text); }
 
 .reject-form { margin-top: var(--space-1); }
+.onpage { display: grid; gap: var(--space-2); margin-top: var(--space-1); }
+.onpage-label { font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
+.crop { margin: 0; display: grid; gap: 3px; }
+.crop-img { position: relative; background-color: #FFFFFF; background-repeat: no-repeat; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); }
+.crop-ring { position: absolute; margin: -7px -11px; padding: 7px 11px; box-sizing: content-box; border: 2px solid #B42318; border-radius: 10px; transform: rotate(-0.6deg); pointer-events: none; }
+.crop figcaption { font-size: var(--text-xs); color: var(--ink-3); }
+.crop-ring.open-l { border-left-style: dashed; }
+.crop-ring.open-r { border-right-style: dashed; }
+.crop-img + .crop-img { margin-top: 2px; }
 
 /* type it in */
 .type-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); margin-top: var(--space-2); }
@@ -389,6 +400,7 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
 /* ---------- export and audit trail */
 .books {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); grid-template-areas: "back back" "export audit" "cost audit";
+  grid-template-rows: auto auto 1fr;
   align-items: start; gap: var(--space-4) var(--space-5); padding: var(--space-5) var(--space-6) var(--space-8); max-width: 1180px;
 }
 .back-link { grid-area: back; justify-self: start; margin-left: calc(-1 * var(--space-2)); }
@@ -478,7 +490,8 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
   .story-actions { justify-content: stretch; }
   .story-actions .btn-primary { flex: 1; }
   .story .btn-link { min-height: var(--touch); }
-  .story-list { grid-template-columns: minmax(0, 1fr); }
+  .story-list { display: none; }
+  body[data-step="6"] .story { max-height: 40dvh; }
   .story-figures { gap: var(--space-5); }
   .story-figures strong { font-size: var(--text-xl); line-height: var(--leading-xl); }
   body:not(.in-story) .story-kicker { display: none; }
@@ -526,7 +539,7 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
   body[data-step="0"] .story { max-height: none; }
 }
 @media (max-width: 900px) and (max-height: 700px) {
-  .story-list, .story-note { display: none; }
+  .story-list { display: none; }
   .story-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   body[data-focus="review"].in-story .story-text, body[data-focus="books"].in-story .story-text { display: none; }
   .story-kicker { font-size: 11px; }
