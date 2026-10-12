@@ -540,7 +540,7 @@ body[data-main="books"] .books-pane { display: block; grid-column: 2 / 4; backgr
 }
 @media (max-width: 900px) and (max-height: 700px) {
   .story-list { display: none; }
-  .story-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .story-text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   body[data-focus="review"].in-story .story-text, body[data-focus="books"].in-story .story-text { display: none; }
   .story-kicker { font-size: 11px; }
 }

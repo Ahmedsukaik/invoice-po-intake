@@ -83,6 +83,12 @@ class Page:
             return !!hit && (hit === own || own.contains(hit) || hit.contains(own)); }"""), f"{locator} is covered"
         assert self.page.evaluate("document.documentElement.scrollWidth") <= width, "the page scrolls sideways"
 
+    def story_text_whole(self) -> None:
+        """The story's text is shown in full (or not at all), never cut off mid-sentence."""
+        for el in self.page.locator(".story-text").all():
+            if el.is_visible():
+                assert el.evaluate("e => e.scrollHeight <= e.clientHeight + 1"), el.inner_text()
+
     def tap(self, locator) -> None:
         self.on_screen(locator)
         locator.click()
@@ -102,6 +108,7 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
     ui.title("An invoice arrives.")                                   # 1
     ui.tap(ui.button("Bring in invoice 01"))
     ui.title("Read, checked and matched to PO-2026-0101.")
+    ui.story_text_whole()
     ui.on_screen(page.locator(".paper-pane .mark").first if width >= 900 else page.locator(".paper-pane .sheet"))
     ui.tap(page.get_by_role("button", name="Next: your turn"))
     ui.title("Your turn: approve it.")                                # 2
@@ -146,6 +153,7 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
     approve = page.locator("[data-approve].ring")
     ui.tap(approve)
     ui.title("Approved, with two findings signed off.")
+    ui.story_text_whole()
     ui.tap(page.get_by_role("button", name="Next: a layout it has never seen"))
 
     ui.title("A layout the rules have never seen.")                   # 5
@@ -167,6 +175,7 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
     assert "The AI reader is off in this demo right now" in page.locator(".cost-card").inner_text()
     audit = page.locator(".audit").inner_text()
     assert "Tried to approve" not in audit and "Rejected it" in audit and "Exported 2 documents" in audit
+    page.locator(".audit-card").scroll_into_view_if_needed()  # read the audit trail, far down the export view
     ui.tap(page.get_by_role("button", name="Try it yourself"))
     page.locator(".story-title", has_text="Bring in any sample").wait_for()
     ui.tap(page.locator("#story [data-add='05']"))  # free use: the story offers the next samples to try
@@ -174,6 +183,11 @@ def test_the_six_step_story_with_each_target_on_screen(browser, site, width, hei
     assert page.locator("#story .tried", has_text="05, a duplicate").count() == 1  # tried: ticked, not crossed out
     if width < 900:
         assert page.locator("#review-pane").evaluate("el => el.scrollTop") == 0  # a new document opens at its top
+    for key in ("08", "09"):
+        ui.tap(page.locator(f"#story [data-add='{key}']"))
+        page.locator(".doc-file", has_text=key + "_").wait_for()
+    ui.tap(page.locator("#story [data-go='books']", has_text="Export them"))
+    ui.on_screen(page.locator(".export-card .btn"))  # the export view opens at its top, not where it was left
     ui.close()
 
 
@@ -214,7 +228,7 @@ def test_on_a_touch_screen_one_tap_on_a_value_shows_its_line(browser, site):
     ui.button("Start the demo").tap()
     ui.button("Bring in invoice 01").tap()
     ui.title("Read, checked and matched")
-    assert "Every value in Review came from the line marked on the page. Tap one" in page.locator("#story").inner_text()
+    assert "Every value in Review came from the line marked on the page; tap one" in page.locator("#story").inner_text()
     page.locator(".switch-row [data-pane='review']").tap()
     row = page.locator(".f-row[data-key='total']")
     row.scroll_into_view_if_needed()
@@ -401,4 +415,54 @@ def test_dark_mode_keeps_the_sheet_white_and_the_text_readable(browser, site):
     page = ui.page
     assert page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(19, 22, 27)"
     assert page.locator(".paper-pane .sheet").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(255, 255, 255)"
+    ui.close()
+
+
+def test_when_both_reviewers_changed_values_the_page_says_reject_it(browser, site):
+    """Sara types the scan in without the total, Omar adds it: now neither may approve, and the
+    page says so instead of sending each to the other."""
+    ui = Page(browser, site)
+    page = ui.page
+    page.get_by_role("button", name="Skip to free use").click()
+    page.locator(".add-row[data-add='08']").click()
+    page.locator(".decision [data-type]").click()
+    page.locator("[data-fill]").click()
+    page.locator("[data-tf='total']").fill("")
+    page.locator("[data-savetype]").click()
+    page.locator(".lockbox", has_text="Fix the typed values first").wait_for()
+    page.locator(".who-row [data-reviewer='omar']").click()
+    page.locator(".decision [data-type]").click()
+    page.locator("[data-tf='total']").fill("540.00")
+    page.locator("[data-savetype]").click()
+    note = page.locator(".four-eyes")
+    note.wait_for()
+    assert "Sara and Omar both changed values, so neither can approve; reject it." in note.inner_text()
+    assert page.locator(".four-eyes [data-reviewer]").count() == 0 and page.locator("[data-approve]").is_disabled()
+    page.locator(".who-row [data-reviewer='sara']").click()
+    assert "neither can approve" in page.locator(".four-eyes").inner_text() and page.locator("[data-approve]").is_disabled()
+    ui.close()
+
+
+def test_on_a_phone_the_toast_stays_clear_and_goes_with_its_session(browser, site):
+    ui = Page(browser, site, 390, 664)
+    page = ui.page
+    page.get_by_role("button", name="Skip to free use").tap()
+    page.locator(".add-row[data-add='01']").tap()
+    page.locator("[data-approve]").tap()
+    page.locator(".decided").wait_for()
+    page.locator(".switch-row [data-pane='inbox']").tap()
+    page.locator(".books-link").tap()
+    page.route("**/api/step", lambda route: route.fulfill(status=500, json={"error": "server", "message": "Try again."}))
+    page.locator("[data-export]").tap()  # fails: the page says so in a toast
+    toast = page.locator("#toast")
+    toast.wait_for(state="visible")
+    page.unroute("**/api/step")
+    ui.errors = [e for e in ui.errors if "status of 500" not in e]  # the failure this test made on purpose
+    back, box = page.locator(".back-link").bounding_box(), toast.bounding_box()
+    assert back and box and (box["y"] >= back["y"] + back["height"] or box["y"] + box["height"] <= back["y"])
+    story = page.locator("#story").bounding_box()
+    assert story and box["y"] + box["height"] <= story["y"]  # above the story sheet, not over it
+    page.locator("#replay").tap()
+    page.locator(".story-title", has_text="An invoice arrives.").wait_for()
+    assert toast.is_hidden()
     ui.close()

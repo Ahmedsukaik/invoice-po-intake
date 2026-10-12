@@ -50,8 +50,12 @@
   let toastTimer = null;
   function toast(msg, ms = 4200) {
     const el = $("#toast"); el.textContent = msg; el.hidden = false;
+    // On a phone it sits just above the story sheet, clear of the panes' own controls.
+    el.style.top = isPhone() ? "auto" : "";
+    el.style.bottom = isPhone() ? `${($("#story")?.offsetHeight || 0) + 12}px` : "";
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, ms);
   }
+  function clearToast() { clearTimeout(toastTimer); $("#toast").hidden = true; }
   let announceTimer = null;
   function announce(msg) {
     const el = $("#announce"); el.textContent = "";
@@ -74,6 +78,7 @@
 
   // ------------------------------------------------------------------ talking to the server
   async function newSession() {
+    clearToast();
     const data = await post("/api/new");
     S.session = data.session; S.view = data.view; S.selected = null; S.acks = {}; S.notes = {}; S.reasons = {};
     S.errors = {}; S.rejecting = null; S.typing = null; S.typed = {}; S.stamps = {};
@@ -144,7 +149,7 @@
         const d = byKey("01");
         if (d) return {
           main: head(1, "Read, checked and matched to PO-2026-0101.") +
-            text(`Every value ${isPhone() ? "in Review" : "on the right"} came from the line marked on the page. ${canHover() ? "Hover" : "Tap"} one to see where. <b>The checks found nothing wrong</b>, and the purchase order covers the full amount.`),
+            text(`Every value ${isPhone() ? "in Review" : "on the right"} came from the line marked on the page; ${canHover() ? "hover" : "tap"} one to see where. <b>Nothing is wrong</b>, and the PO covers the full amount.`),
           actions: primary("next", "Next: your turn"), focus: "paper" };
         return {
           main: head(1, "An invoice arrives.") + text("Acme emails invoice INV-A-1001. The clerk drops the PDF into the inbox. Watch what happens to it.") + wait,
@@ -313,7 +318,11 @@
       } else if (what === "next") setStep(S.step + 1);
       else if (what === "show-review") { setPane("review", true); renderStory(); revealTarget(); }
       else if (what === "show-books") { setPane("books", true); renderStory(); revealTarget(); }
-      else if (what === "books") { S.main = "books"; save(); render(); if (isPhone()) setPane("books", true); }
+      else if (what === "books") {
+        S.main = "books"; save(); render();
+        if (isPhone()) setPane("books", true);
+        $("#books-pane").scrollTop = 0;  // the export card first, whatever was scrolled before
+      }
       else if (what === "back") { S.main = "doc"; save(); render(); if (isPhone()) setPane("inbox", true); }
     } catch (err) { toast(err.message); }
   }
@@ -565,7 +574,11 @@
       <textarea class="input" id="note-${esc(d.id)}" data-note="${esc(d.id)}" rows="2" maxlength="500" placeholder="For example: buyer agreed the extra quantity by phone.">${esc(S.notes[d.id] || "")}</textarea>
       ${inStory() && S.step === 4 && !(S.notes[d.id] || "").trim() ? `<button type="button" class="chip${ring(guide && !nextTick && noteShort)}" data-suggest="${esc(d.id)}">${icon("pen", "i i-xs")}Use: “${esc(NOTE_06)}”</button>` : ""}`
       : `<p class="decision-lead">${icon("check-circle", "i i-sm ok")}No problems found. ${esc((d.findings.find((f) => f.code === "po_matched" || f.code === "po_in_register") || {}).message || "")}</p>`;
-    const four = blockedForMe ? `<p class="four-eyes">${icon("user", "i i-sm")}<span>You typed in values on this document, so a second person must approve it. <button type="button" class="link" data-reviewer="${other(me)}">Switch to ${esc(reviewerName(other(me)))}</button></span></p>` : "";
+    const everyone = (S.config?.reviewers || []).map((r) => r.id);
+    const nobodyLeft = everyone.length > 0 && everyone.every((id) => d.four_eyes.includes(id));
+    const four = !blockedForMe ? "" : nobodyLeft
+      ? `<p class="four-eyes">${icon("user", "i i-sm")}<span>${everyone.map((id) => esc(reviewerName(id))).join(" and ")} both changed values, so neither can approve; reject it.</span></p>`
+      : `<p class="four-eyes">${icon("user", "i i-sm")}<span>You typed in values on this document, so a second person must approve it. <button type="button" class="link" data-reviewer="${other(me)}">Switch to ${esc(reviewerName(other(me)))}</button></span></p>`;
     const ready = !blocking.length || (blocking.every((f) => acks.includes(f.id)) && (S.notes[d.id] || "").trim().length >= 10);
     const approveRing = storyRing && (S.step === 2 || (S.step === 4 && ready));
     return `<section class="decision${blocking.length ? " signoff" : " clean"}" aria-label="Decision">
@@ -802,8 +815,7 @@
         (async () => {
           const data = await act({ type: "export" }, "Exporting.");
           if (!data) return;
-          if (!inStory()) toast(data.result.message);
-          announce(data.result.message);
+          announce(data.result.message);  // the new files appear in view: they are the answer
           $(".batch .files")?.scrollIntoView({ block: "nearest" });  // the files just made
           if (inStory()) revealStory();
         })();
